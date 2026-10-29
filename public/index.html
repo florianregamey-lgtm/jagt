@@ -147,6 +147,13 @@ button.chip{border-radius:999px}
 .endcard{position:absolute;z-index:650;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:20px;overflow:auto}
 .endcard .card{max-width:440px;width:100%;text-align:center}
 .endcard h2{font-size:40px;line-height:1}
+.trackpanel{position:absolute;z-index:600;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 10px);max-height:45%;display:grid;gap:8px;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:16px;padding:12px}
+.trlist{overflow:auto;display:grid;gap:4px;min-height:0}
+.tr{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;background:var(--panel);text-align:left;font-weight:500}
+.tr .sw{width:22px;height:6px;border-radius:3px;flex:none}
+.tr .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr .d{font-variant-numeric:tabular-nums;color:var(--muted)}
+.tr[aria-pressed="false"]{opacity:.45}
 .actions{justify-content:space-between}
 .restab{overflow-x:auto;text-align:left}
 .restab table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
@@ -336,7 +343,7 @@ button.chip{border-radius:999px}
     <div id="compList"></div>
     <div class="small muted" id="compHint">Pfeile: Norden oben</div>
   </div>
-  <div class="bottom">
+  <div class="bottom" id="bottomBar">
     <div class="actions">
       <button class="fab" id="centerBtn" aria-label="Auf mich zentrieren">◎</button>
       <button class="big tag" id="tagBtn">Fangen</button>
@@ -374,12 +381,21 @@ button.chip{border-radius:999px}
       <div class="restab" id="endTable"></div>
       <button class="ghost" id="dlBtn">⬇ Auswertung herunterladen</button>
       <div class="row">
-        <button class="ghost" id="endMap">Karte ansehen</button>
+        <button class="ghost" id="endMap">🗺 Strecken ansehen</button>
         <button class="primary hostOnly" id="againBtn">Neue Runde</button>
       </div>
     </div>
   </div>
   <div class="toast" id="toast" hidden></div>
+  <div class="trackpanel" id="trackPanel" hidden>
+    <div class="row" style="flex-wrap:nowrap">
+      <b style="flex:1;font:800 18px var(--display);text-transform:uppercase;letter-spacing:.06em">Gelaufene Strecken</b>
+      <button class="xbtn sm" id="trAll" style="flex:0 0 auto">Alle</button>
+      <button class="xbtn sm" id="trNone" style="flex:0 0 auto">Keine</button>
+    </div>
+    <div class="trlist" id="trList"><p class="small muted" style="margin:0">Strecken werden geladen …</p></div>
+    <button class="primary sm" id="trBack">Zurück zur Rangliste</button>
+  </div>
   <div class="alarm" id="confirmBox" hidden role="alertdialog" aria-labelledby="confTitle">
     <div class="card">
       <h2 id="confTitle">Gefangen?</h2>
@@ -453,6 +469,7 @@ function connect(){
     else if (m.t === 's') { clockOff = m.now - Date.now(); St = m; render(); }
     else if (m.t === 'ev') onEvent(m);
     else if (m.t === 'confirm') askConfirm(m);
+    else if (m.t === 'tracks') onTracks(m);
     else if (m.t === 'confirmDone') { if (confirmReq && confirmReq.id === m.id) { confirmReq = null; $('confirmBox').hidden = true; } }
     else if (m.t === 'unlocked') {
       unlocked = m.ok;
@@ -595,7 +612,7 @@ function drawMaps(){
   if (!M) return;
   if (M.phase === 'lobby') { if (!lobbyMap) return; layers.lobby.clearLayers(); drawMapContent(layers.lobby, true); fitOnce(lobbyMap, 'lobby'); }
   else {
-    if (!gameMap) return; layers.game.clearLayers(); drawMapContent(layers.game, false); fitOnce(gameMap, 'game');
+    if (!gameMap) return; layers.game.clearLayers(); drawMapContent(layers.game, false); drawTracks(layers.game); fitOnce(gameMap, 'game');
     if (followMe && myPos) gameMap.panTo([myPos.lat, myPos.lng], { animate:true });
   }
 }
@@ -786,7 +803,38 @@ $('stopBtn').onclick = () => { $('confirmStop').hidden = false; };
 $('stopYes').onclick = () => { $('confirmStop').hidden = true; send({ t:'stop' }); };
 $('againBtn').onclick = () => send({ t:'reset' });
 let endHidden = false;
-$('endMap').onclick = () => { $('endCard').hidden = true; endHidden = true; };
+// ---------- Strecken nach Spielende ----------
+let tracks = null, trackOff = new Set(), trackFit = false;
+const trackColor = i => `hsl(${(i * 137.5) % 360} 85% 55%)`;
+$('endMap').onclick = () => { $('endCard').hidden = true; endHidden = true; $('trackPanel').hidden = false; $('bottomBar').hidden = true; if (!tracks) send({ t:'tracks' }); else drawMaps(); };
+$('trBack').onclick = () => { $('trackPanel').hidden = true; $('bottomBar').hidden = false; endHidden = false; render(); };
+$('trAll').onclick = () => { trackOff.clear(); renderTrackList(); drawMaps(); };
+$('trNone').onclick = () => { trackOff = new Set((tracks || []).map(t => t.pid)); renderTrackList(); drawMaps(); };
+function onTracks(m){
+  tracks = m.list.map((t, i) => ({ ...t, color: trackColor(i) })).sort((a, b) => b.len - a.len);
+  trackFit = false; renderTrackList(); drawMaps();
+}
+function renderTrackList(){
+  if (!tracks) return;
+  $('trList').replaceChildren(...(tracks.length ? tracks.map(t => {
+    const role = (M.roster.find(r => r.pid === t.pid) || {}).role;
+    const b = el('button',{ class:'tr', 'aria-pressed': String(!trackOff.has(t.pid)), onclick:() => { trackOff.has(t.pid) ? trackOff.delete(t.pid) : trackOff.add(t.pid); renderTrackList(); drawMaps(); } },
+      el('span',{ class:'sw', style:`background:${t.color}` }), el('span',{ class:'n' }), el('span',{ class:'chip r-'+role }, ROLE[role] || ''), el('span',{ class:'d' }, fmtD(t.len)));
+    b.querySelector('.n').textContent = t.name; return b;
+  }) : [el('p',{ class:'small muted', style:'margin:0' }, 'Keine Strecken aufgezeichnet.')]));
+}
+function drawTracks(g){
+  if (!tracks || M.phase !== 'ended' || $('trackPanel').hidden) return;
+  const all = [];
+  for (const t of tracks) {
+    if (trackOff.has(t.pid) || t.pts.length < 2) continue;
+    const ll = t.pts.map(p => [p[0], p[1]]); all.push(...ll);
+    L.polyline(ll, { color:t.color, weight:4, opacity:.9, interactive:false }).addTo(g);
+    L.circleMarker(ll[0], { radius:5, color:'#fff', weight:2, fillColor:t.color, fillOpacity:1, interactive:false }).addTo(g);
+    L.circleMarker(ll[ll.length-1], { radius:7, color:t.color, weight:3, fillColor:'#fff', fillOpacity:1, interactive:false }).bindTooltip(t.name, { permanent:true, direction:'top', offset:[0,-6] }).addTo(g);
+  }
+  if (!trackFit && all.length) { gameMap.fitBounds(L.latLngBounds(all), { padding:[30,30] }); trackFit = true; followMe = false; }
+}
 
 
 function toast(text, kind='info'){
@@ -920,14 +968,14 @@ function results(){
   const cols = ctf
     ? [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Team',r=>ROLE[r.role]],['Eroberungen',r=>r.caps,1],['Abgeschlagen',r=>r.tags,1]]
     : [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Start als',r=>ROLE[r.res.start]],['Ende als',r=>ROLE[r.role]],['Punkte',r=>r.res.pts,1],
-       ['Fänge',r=>r.tags,1],['Weg (m)',r=>r.res.dist,1],['Risikozone',r=>r.res.st.risk,1],['Ping-Bonus',r=>r.res.st.bonus,1],
+       ['Fänge',r=>r.tags,1],['Strecke (m)',r=>r.res.walked,1],['Hunter-Weg (m)',r=>r.res.dist,1],['Risikozone',r=>r.res.st.risk,1],['Ping-Bonus',r=>r.res.st.bonus,1],
        ['Lauf-Punkte',r=>r.res.st.dist,1],['Fang-Punkte',r=>r.res.st.catch,1],['Power-up-Orte',r=>r.res.st.spot,1],['Ausgegeben',r=>r.res.st.spent,1],
        ['Power-ups',r=>r.res.st.items,1],['Gefangen nach (Min.)',r=>r.res.caughtMin ?? '',1],['Gefangen durch',r=>r.res.caughtBy]];
   return { cols, rows: rs.map((r,i) => cols.map(([, f]) => f(r,i))) };
 }
 function renderResults(){
   const { cols, rows } = results();
-  const show = M.mode === 'ctf' ? [0,1,2,3,4] : [0,1,2,4,5,6,14];  // kurze Tabelle am Handy, alles im Download
+  const show = M.mode === 'ctf' ? [0,1,2,3,4] : [0,1,2,4,5,6];  // kurze Tabelle am Handy, alles im Download
   const t = el('table',{}, el('thead',{}, el('tr',{}, ...show.map(i => el('th',{ class: cols[i][2] ? 'n' : '' }, cols[i][0])))),
     el('tbody',{}, ...rows.map((r, k) => el('tr',{ class: k === 0 ? 'top' : '' }, ...show.map(i => { const td = el('td',{ class: cols[i][2] ? 'n' : '' }); td.textContent = r[i]; return td; })))));
   $('endTable').replaceChildren(t);

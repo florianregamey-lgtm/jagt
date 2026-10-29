@@ -22,6 +22,8 @@ Manhunt (mit Punkten und Power-ups) und Flaggenraub (Capture the Flag) im echten
 
 **Auswertung**: Am Spielende zeigt die App eine Rangliste. Mit «⬇ Auswertung herunterladen» gibt es eine CSV-Datei (öffnet sich in Excel) mit allen Punkten, aufgeschlüsselt nach Risikozone, Ping-Bonus, Laufen, Fängen, Power-up-Orten, ausgegebenen Punkten und wer wann von wem gefangen wurde. Am Handy öffnet sich direkt das Teilen-Menü (z.B. für WhatsApp).
 
+**Strecken**: Während des Spiels zeichnet der Server auf, wo alle gelaufen sind. Nach Spielende zeigt «🗺 Strecken ansehen» alle Wege farbig auf der Karte; einzelne Personen lassen sich ein- und ausblenden. Die Länge steht auch in der Auswertung.
+
 **Power-ups (⚡)**
 | Für | Power-up | Kosten | Wirkung |
 |---|---|---|---|

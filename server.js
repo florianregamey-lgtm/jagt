@@ -165,7 +165,7 @@ const isOut = (g, p, z) => !!z && p.lat != null && !inPoly(p, z);
 // ---------- Ablauf ----------
 function resetPlayer(p, g) {
   Object.assign(p, { caught: false, carrying: null, respawn: false, caps: 0, tags: 0, pts: 0, dist: 0, distPaid: 0,
-    outSince: 0, lastPing: null, near: new Set(), eff: {}, inv: [], lastStep: null, caughtAt: 0, caughtBy: '',
+    outSince: 0, lastPing: null, near: new Set(), eff: {}, inv: [], lastStep: null, caughtAt: 0, caughtBy: '', track: [], trackLen: 0,
     st: { risk: 0, bonus: 0, dist: 0, catch: 0, spot: 0, spent: 0, items: 0 },
     ready: !(isHunter(p) && g.map.start) });
 }
@@ -359,6 +359,19 @@ function ctfTick(g) {
   }
 }
 
+// ---------- Gelaufene Strecke aufzeichnen ----------
+// Ein Punkt pro 8 m Bewegung (oder alle 30 s bei kleiner Bewegung). Sehr lange Strecken werden ausgedünnt.
+function recordTrack(g, p, lat, lng, t) {
+  const tr = p.track, last = tr[tr.length - 1], pt = { lat, lng };
+  if (last) {
+    const d = dist({ lat: last[0], lng: last[1] }, pt), dt = (t - g.startAt) / 1000 - last[2];
+    if (d < 8 && !(dt >= 30 && d >= 3)) return;
+    if (d / Math.max(dt, 1) <= 40) p.trackLen += d; // GPS-Sprünge nicht mitzählen
+  }
+  tr.push([r5(lat), r5(lng), Math.round((t - g.startAt) / 1000)]);
+  if (tr.length > 3000) p.track = tr.filter((_, i) => i % 2 === 0 || i === tr.length - 1);
+}
+
 // ---------- Aktionen ----------
 function tagRange(g, p) { return g.settings.tagRadius + Math.min(15, (p.acc || 0) / 2); }
 function canTag(g, p) {
@@ -441,7 +454,7 @@ function metaFor(g) {
     roster: P(g).map(p => ({ pid: p.pid, name: p.name, role: p.role, caught: !!p.caught, ready: p.ready !== false, caps: p.caps || 0, tags: p.tags || 0, inv: (p.inv || []).length,
       // Auswertung am Spielende
       ...(g.phase === 'ended' ? { res: { start: p.wasRunner ? 'runner' : p.role === 'A' || p.role === 'B' || p.role === 'gm' ? p.role : 'hunter', pts: Math.floor(p.pts || 0),
-        dist: Math.round(p.dist || 0), caughtMin: p.caughtAt ? Math.round((p.caughtAt - g.runAt) / 60000) : null, caughtBy: p.caughtBy || '',
+        dist: Math.round(p.dist || 0), walked: Math.round(p.trackLen || 0), caughtMin: p.caughtAt ? Math.round((p.caughtAt - g.runAt) / 60000) : null, caughtBy: p.caughtBy || '',
         st: Object.fromEntries(Object.entries(p.st || {}).map(([k, v]) => [k, Math.floor(v)])) } } : {}) })),
     started: g.startAt, ended: g.endedAt || 0 });
   return g.metaJson;
@@ -554,10 +567,12 @@ function handle(ws, m) {
           }
         } else me.lastStep = { lat, lng, t };
       }
+      if ((g.phase === 'headstart' || running) && acc <= 50) recordTrack(g, me, lat, lng, t);
       me.lat = lat; me.lng = lng; me.acc = acc; me.t = t;
       return;
     }
     case 'tag': tryTag(g, me); return pushNow(g);
+    case 'tracks': if (g.phase === 'ended') send(ws, { t: 'tracks', startAt: g.startAt, list: P(g).filter(p => !isGM(p) && p.track.length).map(p => ({ pid: p.pid, name: p.name, len: Math.round(p.trackLen), pts: p.track })) }); return;
     case 'confirmTag': answerTag(g, me, String(m.id || ''), m.yes === true); return pushNow(g);
     case 'selfCaught': if (g.mode === 'manhunt' && isRunner(me) && running) { catchPlayer(g, me, null, 'self'); pushNow(g); } return;
     case 'buy': {
