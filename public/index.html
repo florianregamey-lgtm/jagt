@@ -268,12 +268,14 @@ button.chip{border-radius:999px}
       <label>Ping alle (Sek.)<input type="number" id="s_pingInterval" data-k="pingInterval" min="15" max="1800" step="5" inputmode="numeric"></label>
       <label>Fangdistanz (m)<input type="number" id="s_tagRadius" data-k="tagRadius" min="3" max="50" inputmode="numeric"></label>
       <label>Zeit ausserhalb der Zone (Sek.)<input type="number" id="s_outGrace" data-k="outGrace" min="5" max="300" inputmode="numeric"></label>
+      <label class="mhOnly">Fang bestätigen innert (Sek.)<input type="number" id="s_confirmSecs" data-k="confirmSecs" min="10" max="120" inputmode="numeric"></label>
       <label class="mhOnly">Warnung ab Distanz (m)<input type="number" id="s_proxAlert" data-k="proxAlert" min="10" max="300" inputmode="numeric"></label>
       <label class="ctfOnly">Eroberungen zum Sieg<input type="number" id="s_capsToWin" data-k="capsToWin" min="1" max="20" inputmode="numeric"></label>
       <label class="ctfOnly">Basis-Radius (m)<input type="number" id="s_baseRadius" data-k="baseRadius" min="5" max="60" inputmode="numeric"></label>
       <label class="shrinkOnly">Zone am Schluss (%)<input type="number" id="s_endPct" data-k="endPct" min="5" max="100" step="5" inputmode="numeric"></label>
     </div>
     <label class="toggle mhOnly"><input type="checkbox" id="s_convert" data-k="convert"> Gefangene Runner werden zu Huntern</label>
+    <label class="toggle mhOnly"><input type="checkbox" id="s_confirmTag" data-k="confirmTag"> Runner muss den Fang bestätigen</label>
     <label class="toggle"><input type="checkbox" id="s_zoneShrink" data-k="zoneShrink"> Zone schrumpft während des Spiels</label>
     <label class="toggle mhOnly"><input type="checkbox" id="s_showHunters" data-k="showHunters"> Runner sehen Hunter live auf der Karte</label>
     <details class="mhOnly">
@@ -378,6 +380,18 @@ button.chip{border-radius:999px}
     </div>
   </div>
   <div class="toast" id="toast" hidden></div>
+  <div class="alarm" id="confirmBox" hidden role="alertdialog" aria-labelledby="confTitle">
+    <div class="card">
+      <h2 id="confTitle">Gefangen?</h2>
+      <p id="confText" style="margin:0"></p>
+      <div class="timer num" id="confTime"></div>
+      <div class="row">
+        <button class="ghost" id="confNo">Nein</button>
+        <button class="primary" id="confYes">Ja, gefangen</button>
+      </div>
+      <p class="small muted" style="margin:0">Antwortest du nicht, zählt der Fang automatisch.</p>
+    </div>
+  </div>
   <div class="alarm" id="alarm" hidden role="alertdialog" aria-labelledby="alarmTitle">
     <div class="card">
       <h2 id="alarmTitle">Ausserhalb der Zone!</h2>
@@ -438,6 +452,8 @@ function connect(){
     else if (m.t === 'meta') { M = m; render(); }
     else if (m.t === 's') { clockOff = m.now - Date.now(); St = m; render(); }
     else if (m.t === 'ev') onEvent(m);
+    else if (m.t === 'confirm') askConfirm(m);
+    else if (m.t === 'confirmDone') { if (confirmReq && confirmReq.id === m.id) { confirmReq = null; $('confirmBox').hidden = true; } }
     else if (m.t === 'unlocked') {
       unlocked = m.ok;
       if (m.ok) { if ($('pw').value) store.set('jagd.pw', $('pw').value); $('pw').value = ''; $('pwErr').textContent = ''; }
@@ -700,6 +716,22 @@ function siren(sec = 3){
   } catch {}
 }
 $('alarmOk').onclick = () => { $('alarm').hidden = true; };
+
+// Fang bestätigen (Runner)
+let confirmReq = null;
+function beep(){ if (!actx) return; try { const t0 = actx.currentTime; for (let i = 0; i < 3; i++) { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = 880; g.gain.value = .25; o.connect(g).connect(actx.destination); o.start(t0 + i*.25); o.stop(t0 + i*.25 + .15); } } catch {} }
+function askConfirm(m){
+  confirmReq = { id:m.id, until: Date.now() + m.secs * 1000 };
+  if (m.vib && navigator.vibrate) try { navigator.vibrate(m.vib); } catch {}
+  beep();
+  $('confText').textContent = `${m.hunter} sagt, er/sie hat dich berührt. Stimmt das?`;
+  $('confirmBox').hidden = false; tickConfirm();
+}
+function tickConfirm(){ if (!confirmReq) return; const s = Math.max(0, Math.ceil((confirmReq.until - Date.now())/1000)); $('confTime').textContent = s + ' s'; if (s <= 0) { $('confirmBox').hidden = true; confirmReq = null; } }
+setInterval(tickConfirm, 500);
+function answer(yes){ if (!confirmReq) return; send({ t:'confirmTag', id:confirmReq.id, yes }); confirmReq = null; $('confirmBox').hidden = true; }
+$('confYes').onclick = () => answer(true);
+$('confNo').onclick = () => answer(false);
 
 // ---------- Regeln ----------
 const settingEls = [...document.querySelectorAll('[data-k]')];

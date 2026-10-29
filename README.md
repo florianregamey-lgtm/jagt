@@ -11,6 +11,7 @@ Manhunt (mit Punkten und Power-ups) und Flaggenraub (Capture the Flag) im echten
 - **Kompass** für Runner: die 10 nächsten Hunter mit Richtung und Distanz. Mit 🧭 richten sich die Pfeile nach dem Handy aus.
 - **Warnung** an beide, wenn sich Runner und Hunter näher als 50 m kommen.
 - **Zone verlassen**: Nur die betroffene Person bekommt ein Popup mit 3 Sekunden Sirene und Countdown. Nach 30 Sekunden ist ein Runner raus.
+- **Fang bestätigen**: Der Hunter berührt den Runner und tippt auf «Fangen». Ist der Runner laut GPS in Reichweite, erscheint bei ihm «Gefangen? Ja / Nein». «Nein» wird im Verlauf festgehalten (die Spielleitung kann über ☰ einen Fang auch selbst eintragen). Antwortet der Runner nicht innert 30 Sekunden, zählt der Fang. Abschaltbar in den Einstellungen.
 - **Auslosen**: Die Spielleitung legt fest, wie viele Runner es gibt; wer Runner wird, entscheidet der Zufall.
 
 **Punkte für Runner**

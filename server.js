@@ -78,6 +78,8 @@ const DEFAULTS = {
   tagRadius: 12,       // m Fangdistanz
   showHunters: false,  // Runner sehen Hunter live auf der Karte
   convert: true,       // gefangene Runner werden Hunter
+  confirmTag: true,    // Runner muss den Fang bestätigen
+  confirmSecs: 30,     // Sek. bis ein unbeantworteter Fang automatisch zählt
   zoneShrink: false,   // Zone schrumpft
   endPct: 50,          // Zonengrösse am Schluss in % (Länge)
   outGrace: 30,        // Sek. ausserhalb der Zone bis "tot"
@@ -96,7 +98,7 @@ const DEFAULTS = {
 const LIMITS = {
   headStart: [0, 3600], duration: [60, 6 * 3600], pingInterval: [15, 1800], tagRadius: [3, 50], endPct: [5, 100],
   outGrace: [5, 300], proxAlert: [10, 300], riskPtsPerMin: [0, 120], pingBonusDist: [5, 100], pingBonusPts: [0, 200],
-  distPts: [0, 20], catchPts: [0, 200], spotRadius: [5, 100], spotPts: [0, 200],
+  distPts: [0, 20], catchPts: [0, 200], spotRadius: [5, 100], confirmSecs: [10, 120], spotPts: [0, 200],
   spotCooldown: [10, 3600], capsToWin: [1, 20], baseRadius: [5, 60],
 };
 const ITEMS = {
@@ -118,7 +120,7 @@ function makeGame(hostPid) {
   return { code: newCode(), hostPid, mode: 'manhunt', settings: { ...DEFAULTS },
     map: { zone: null, start: null, risks: [], spots: [], flags: { A: null, B: null } },
     phase: 'lobby', startAt: 0, runAt: 0, endAt: 0, nextPing: 0, winner: null, reason: '',
-    players: new Map(), pingSnap: {}, spotReady: {}, flagHome: { A: true, B: true }, log: [],
+    players: new Map(), pending: new Map(), pingSnap: {}, spotReady: {}, flagHome: { A: true, B: true }, log: [],
     metaDirty: true, metaJson: null, touched: now() };
 }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
@@ -170,6 +172,7 @@ function resetPlayer(p, g) {
 function startGame(g) {
   const t = now();
   for (const p of P(g)) { resetPlayer(p, g); p.wasRunner = isRunner(p); }
+  g.pending = new Map();
   g.startAt = t; g.runAt = t + g.settings.headStart * 1000; g.endAt = g.runAt + g.settings.duration * 1000;
   g.phase = g.settings.headStart > 0 ? 'headstart' : 'running';
   g.nextPing = g.runAt + g.settings.pingInterval * 1000; g.pingSnap = {}; g.spotReady = {};
@@ -223,6 +226,7 @@ function doPing(g, regular, by) {
 
 function catchPlayer(g, target, by, how) {
   if (target.caught) return;
+  clearPending(g, target);
   target.caught = true; target.eff = {};
   delete g.pingSnap[target.pid];
   if (by) { by.tags++; by.pts += g.settings.catchPts; by.st.catch += g.settings.catchPts; }
@@ -328,6 +332,7 @@ function logicTick(g, t) {
       send(h.ws, { t: 'ev', kind: 'near', text: `Ein Runner ist weniger als ${s.proxAlert} m von dir entfernt!`, vib: [400, 100, 400] });
     } else if (d > s.proxAlert + 25) r.near.delete(h.pid);
   }
+  for (const [rid, pend] of g.pending) if (pend.until <= t) { const r = g.players.get(rid); if (r) { answerTag(g, r, pend.id, true, true); send(r.ws, { t: 'confirmDone', id: pend.id }); } else g.pending.delete(rid); }
   // Spürnase beenden, wenn das Ziel weg ist
   for (const h of hunters) if (h.eff.nose && (h.eff.nose.until < t || g.players.get(h.eff.nose.pid)?.caught)) delete h.eff.nose;
 }
@@ -379,10 +384,36 @@ function tryTag(g, me) {
     addLog(g, `${me.name} hat ${best.name} abgeschlagen`);
     send(best.ws, { t: 'ev', kind: 'caught', text: `${me.name} hat dich abgeschlagen. Zurück in deine Basis!`, vib: [800] });
     send(me.ws, { t: 'ev', kind: 'hit', text: `Du hast ${best.name} abgeschlagen!${dropped ? ' Die Flagge ist zurück.' : ''}`, vib: [200] });
+  } else if (g.settings.confirmTag) {
+    if (g.pending.has(best.pid)) return send(me.ws, { t: 'ev', kind: 'miss', text: `${best.name} muss schon einen Fang bestätigen.` });
+    const id = Math.random().toString(36).slice(2, 10), secs = g.settings.confirmSecs;
+    g.pending.set(best.pid, { id, hunter: me.pid, until: now() + secs * 1000 });
+    send(best.ws, { t: 'confirm', id, hunter: me.name, secs, vib: [300, 100, 300, 100, 300] });
+    send(me.ws, { t: 'ev', kind: 'info', text: `Warte, bis ${best.name} den Fang bestätigt …` });
   } else {
     send(me.ws, { t: 'ev', kind: 'hit', text: `Du hast ${best.name} gefangen! +${g.settings.catchPts} Punkte`, vib: [200] });
     catchPlayer(g, best, me);
   }
+}
+
+// Antwort des Runners auf eine Fang-Anfrage
+function answerTag(g, runner, id, yes, auto) {
+  const pend = g.pending.get(runner.pid);
+  if (!pend || pend.id !== id) return;
+  g.pending.delete(runner.pid);
+  const hunter = g.players.get(pend.hunter);
+  if (yes) {
+    if (hunter) send(hunter.ws, { t: 'ev', kind: 'hit', text: `${runner.name} hat den Fang ${auto ? 'nicht beantwortet – er zählt' : 'bestätigt'}! +${g.settings.catchPts} Punkte`, vib: [200] });
+    if (auto) addLog(g, `${runner.name} hat nicht geantwortet – Fang zählt automatisch`);
+    catchPlayer(g, runner, hunter || null, hunter ? undefined : 'gm');
+  } else {
+    if (hunter) send(hunter.ws, { t: 'ev', kind: 'miss', text: `${runner.name} sagt: nicht gefangen. Bei Streit entscheidet die Spielleitung.`, vib: [100] });
+    addLog(g, `${runner.name} hat den Fang von ${hunter ? hunter.name : '?'} abgelehnt`);
+  }
+}
+function clearPending(g, runner) {
+  const pend = g.pending.get(runner.pid);
+  if (pend) { g.pending.delete(runner.pid); send(runner.ws, { t: 'confirmDone', id: pend.id }); }
 }
 
 function useItem(g, p, item) {
@@ -527,6 +558,7 @@ function handle(ws, m) {
       return;
     }
     case 'tag': tryTag(g, me); return pushNow(g);
+    case 'confirmTag': answerTag(g, me, String(m.id || ''), m.yes === true); return pushNow(g);
     case 'selfCaught': if (g.mode === 'manhunt' && isRunner(me) && running) { catchPlayer(g, me, null, 'self'); pushNow(g); } return;
     case 'buy': {
       const it = ITEMS[m.item];
@@ -560,7 +592,7 @@ function handle(ws, m) {
       if (g.phase !== 'lobby') return;
       const s = g.settings, i = m.settings || {};
       for (const k of Object.keys(LIMITS)) if (k in i) s[k] = clamp(num(i[k], s[k]), ...LIMITS[k]);
-      for (const k of ['showHunters', 'convert', 'zoneShrink']) if (typeof i[k] === 'boolean') s[k] = i[k];
+      for (const k of ['showHunters', 'convert', 'zoneShrink', 'confirmTag']) if (typeof i[k] === 'boolean') s[k] = i[k];
       break;
     }
     case 'setMap': {
@@ -612,7 +644,7 @@ function handle(ws, m) {
     case 'ping': if (running) doPing(g, false); break;
     case 'stop': if (running || g.phase === 'headstart') endGame(g, 'draw', 'Die Spielleitung hat das Spiel beendet.'); break;
     case 'reset': {
-      g.phase = 'lobby'; g.winner = null; g.reason = ''; g.pingSnap = {};
+      g.phase = 'lobby'; g.winner = null; g.reason = ''; g.pingSnap = {}; g.pending = new Map();
       for (const p of P(g)) { if (g.mode === 'manhunt' && p.wasRunner) p.role = 'runner'; resetPlayer(p, g); }
       addLog(g, 'Neue Runde vorbereitet'); break;
     }
