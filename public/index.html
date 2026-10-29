@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#121a14">
+<title>Jagd</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+/* Layout: Startseite → Lobby → Vollbild-Karte mit Statusleiste oben und Aktionsknopf unten.
+   Dunkel zuerst (Waldboden), grosse Flächen und starker Kontrast für draussen. */
+:root{
+  --bg:#121a14; --panel:#1b2620; --line:#2c3a31; --fg:#eef3ea; --muted:#9db0a2;
+  --hunt:#ff7a2f;   /* Jäger / Signal */
+  --hide:#5fd0b4;   /* Gejagte */
+  --red:#ef5350; --blue:#4f8cff; --gold:#f5c542; --zombie:#9be15d;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#eef2ea; --panel:#ffffff; --line:#d3ddd2; --fg:#14201a; --muted:#566a5c; --hunt:#e0570b; --hide:#11977a; color-scheme:light; }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.45 var(--body);-webkit-tap-highlight-color:transparent;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+h1,h2,h3{font-family:var(--display);font-weight:800;letter-spacing:.01em;margin:0;text-wrap:balance}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;border-radius:12px;padding:12px 16px;background:var(--line);font-weight:600}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+button.primary{background:var(--hunt);color:#1a0d04}
+button.ghost{background:transparent;border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg)}
+label{display:grid;gap:6px;font-size:14px;color:var(--muted)}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+.wrap{max-width:560px;margin:0 auto;padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;gap:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>*{flex:1 1 auto}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.num{font-variant-numeric:tabular-nums}
+
+/* Startseite */
+.hero{display:grid;gap:6px;padding-top:12px}
+.hero h1{font-size:64px;line-height:.9;text-transform:uppercase}
+.hero h1 span{color:var(--hunt)}
+.hero p{margin:0;color:var(--muted);max-width:40ch}
+.coord{font:600 12px/1 var(--display);letter-spacing:.14em;color:var(--muted)}
+.code-input{text-transform:uppercase;letter-spacing:.3em;font:800 28px var(--display);text-align:center}
+
+/* Lobby */
+.code-big{font:800 56px/1 var(--display);letter-spacing:.15em;color:var(--gold)}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.modes button{display:grid;gap:2px;text-align:left;padding:12px;background:var(--bg);border:1px solid var(--line)}
+.modes button b{font-family:var(--display);font-size:20px}
+.modes button small{color:var(--muted);font-size:12px;font-weight:500}
+.modes button[aria-pressed="true"]{border-color:var(--hunt);box-shadow:inset 0 0 0 1px var(--hunt)}
+@media (max-width:420px){.modes{grid-template-columns:1fr}}
+#lobbyMap{height:280px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toggle{display:flex;align-items:center;gap:10px;color:var(--fg);font-size:15px}
+.toggle input{width:22px;height:22px}
+.players{display:grid;gap:6px}
+.player{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--bg)}
+.player .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
+.dot.on{background:var(--hide)}
+.chip{font:600 13px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:var(--line);white-space:nowrap}
+button.chip{border-radius:999px}
+.r-hider{background:color-mix(in srgb,var(--hide) 25%,transparent);color:var(--hide)}
+.r-seeker{background:color-mix(in srgb,var(--hunt) 25%,transparent);color:var(--hunt)}
+.r-A{background:color-mix(in srgb,var(--red) 25%,transparent);color:var(--red)}
+.r-B{background:color-mix(in srgb,var(--blue) 25%,transparent);color:var(--blue)}
+.r-gm{background:color-mix(in srgb,var(--gold) 22%,transparent);color:var(--gold)}
+.r-zombie{background:color-mix(in srgb,var(--zombie) 25%,transparent);color:var(--zombie)}
+.xbtn{padding:6px 10px;background:transparent;color:var(--muted)}
+
+/* Spielansicht */
+#game{position:fixed;inset:0;display:flex;flex-direction:column}
+#map{flex:1;background:#2a352d}
+.topbar{position:absolute;z-index:500;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 10px) max(10px,env(safe-area-inset-right,0px)) 0 max(10px,env(safe-area-inset-left,0px));display:grid;gap:8px;pointer-events:none}
+.bar{pointer-events:auto;display:flex;gap:10px;align-items:center;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:8px 12px}
+.timer{font:800 32px/1 var(--display);font-variant-numeric:tabular-nums}
+.phase{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+.ping{margin-left:auto;text-align:right}
+.ping .timer{font-size:22px;color:var(--gold)}
+.sub{display:flex;gap:8px;flex-wrap:wrap;pointer-events:auto}
+.sub .chip{background:color-mix(in srgb,var(--bg) 88%,transparent);border:1px solid var(--line)}
+.bottom{position:absolute;z-index:500;left:0;right:0;bottom:0;padding:0 max(10px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 12px) max(10px,env(safe-area-inset-left,0px));display:grid;gap:8px}
+.actions{display:flex;gap:8px}
+.big{flex:1;font:800 24px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:18px;border-radius:16px}
+.big.tag{background:var(--hunt);color:#1a0d04}
+.big.tag.ready{animation:pulse 1s infinite}
+.big.self{background:var(--panel);border:1px solid var(--line)}
+.fab{width:56px;height:56px;padding:0;border-radius:16px;background:var(--panel);border:1px solid var(--line);font-size:20px;flex:none;display:grid;place-items:center}
+@keyframes pulse{50%{box-shadow:0 0 0 10px color-mix(in srgb,var(--hunt) 25%,transparent)}}
+@media (prefers-reduced-motion:reduce){.big.tag.ready{animation:none}}
+.toast{position:absolute;z-index:700;left:50%;top:40%;transform:translate(-50%,-50%);width:min(90vw,420px);background:var(--panel);border:2px solid var(--gold);border-radius:18px;padding:18px 20px;font:700 22px/1.2 var(--display);text-align:center;box-shadow:0 20px 60px #0008}
+.toast.k-caught{border-color:var(--red)} .toast.k-zone{border-color:var(--red)} .toast.k-hit,.toast.k-score,.toast.k-flag{border-color:var(--zombie)}
+.sheet{position:absolute;z-index:600;left:0;right:0;bottom:0;max-height:70%;overflow:auto;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;padding:16px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 16px) max(16px,env(safe-area-inset-left,0px));display:grid;gap:12px}
+.log{display:grid;gap:4px;font-size:14px}
+.log div{display:flex;gap:8px}
+.log time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.endcard{position:absolute;z-index:650;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:20px}
+.endcard .card{max-width:420px;width:100%;text-align:center}
+.endcard h2{font-size:40px;line-height:1}
+.gps{font-size:12px}
+.gps.bad{color:var(--red)}
+.err{color:var(--red);font-size:14px;min-height:1.2em}
+
+/* Leaflet-Marker */
+.mk{display:grid;place-items:center;transform:translate(-50%,-50%);position:absolute}
+.mk i{display:block;width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px #0009}
+.mk span{position:absolute;top:20px;white-space:nowrap;font:700 13px var(--display);letter-spacing:.04em;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000}
+.mk.me i{width:22px;height:22px;border-width:4px}
+.mk.old i{opacity:.55;border-style:dashed}
+.mk.caught i{opacity:.35}
+.flagmk{font-size:28px;transform:translate(-30%,-90%);position:absolute;filter:drop-shadow(0 1px 2px #000a)}
+.leaflet-container{font-family:var(--body)}
+</style>
+</head>
+<body>
+
+<!-- ========== Start ========== -->
+<section id="home" class="wrap">
+  <div class="hero">
+    <div class="coord">47°30′ N · 8°43′ E · GELÄNDESPIEL</div>
+    <h1>Die <span>Jagd</span></h1>
+    <p>Versteckis, Manhunt und Capture the Flag mit GPS. Eine Person eröffnet das Spiel, alle anderen treten mit dem Code bei.</p>
+  </div>
+  <div class="card">
+    <label>Dein Name<input id="name" maxlength="20" autocomplete="nickname" placeholder="z.B. Fuchs"></label>
+    <div class="err" id="homeErr"></div>
+    <div class="grid2">
+      <input id="codeIn" class="code-input" maxlength="4" placeholder="CODE" autocapitalize="characters" aria-label="Spielcode">
+      <button id="joinBtn">Beitreten</button>
+    </div>
+    <div class="row"><button id="createBtn" class="primary">Neues Spiel eröffnen</button></div>
+  </div>
+  <details class="card small">
+    <summary class="muted">Testmodus (ohne GPS)</summary>
+    <label class="toggle"><input type="checkbox" id="testMode"> Position durch Antippen der Karte setzen</label>
+    <p class="muted" style="margin:0">Zum Ausprobieren am Computer. Mehrere Browserfenster = mehrere Spieler.</p>
+  </details>
+</section>
+
+<!-- ========== Lobby ========== -->
+<section id="lobby" class="wrap" hidden>
+  <div class="row" style="align-items:end">
+    <div>
+      <div class="label">Spielcode</div>
+      <div class="code-big num" id="lCode">----</div>
+    </div>
+    <button id="shareBtn" class="ghost" style="flex:0 0 auto">Link kopieren</button>
+  </div>
+  <div class="err" id="lobbyErr"></div>
+
+  <div class="card" id="modeCard">
+    <div class="label">Spielmodus</div>
+    <div class="modes" id="modes">
+      <button data-mode="classic"><b>Manhunt</b><small>Jäger sehen die Gejagten nur beim Ping</small></button>
+      <button data-mode="zombie"><b>Zombie</b><small>Wer gefangen wird, jagt mit</small></button>
+      <button data-mode="ctf"><b>Flaggen&shy;raub</b><small>Rot gegen Blau, Capture the Flag</small></button>
+    </div>
+    <p class="small muted" id="modeHelp" style="margin:0"></p>
+  </div>
+
+  <div class="card">
+    <div class="row"><div class="label">Spielfeld</div><span class="small muted num" id="zoneInfo" style="text-align:right"></span></div>
+    <div id="lobbyMap"></div>
+    <div class="row" id="mapTools">
+      <button id="zoneHere" class="ghost">Zone um mich</button>
+      <button id="zoneTap" class="ghost">Zone: Karte antippen</button>
+    </div>
+    <div class="row" id="flagTools" hidden>
+      <button id="flagA" class="ghost" style="color:var(--red)">Flagge Rot setzen</button>
+      <button id="flagB" class="ghost" style="color:var(--blue)">Flagge Blau setzen</button>
+    </div>
+    <label id="radiusWrap">Radius <span class="num" id="radiusVal">300 m</span><input type="range" id="radius" min="50" max="2000" step="25" value="300"></label>
+    <p class="small muted" id="tapHint" style="margin:0" hidden></p>
+  </div>
+
+  <div class="card" id="settingsCard">
+    <div class="label">Regeln</div>
+    <div class="grid2">
+      <label>Vorsprung (Min.)<input type="number" id="sHead" min="0" max="30" step="0.5" inputmode="decimal"></label>
+      <label>Spieldauer (Min.)<input type="number" id="sDur" min="1" max="360" step="1" inputmode="numeric"></label>
+      <label>Ping alle (Sek.)<input type="number" id="sPing" min="15" max="1800" step="5" inputmode="numeric"></label>
+      <label>Fangdistanz (m)<input type="number" id="sTag" min="3" max="50" step="1" inputmode="numeric"></label>
+      <label class="ctfOnly">Eroberungen zum Sieg<input type="number" id="sCaps" min="1" max="20" inputmode="numeric"></label>
+      <label class="ctfOnly">Basis-Radius (m)<input type="number" id="sBase" min="5" max="60" inputmode="numeric"></label>
+      <label class="shrinkOnly">Zone am Schluss (%)<input type="number" id="sEnd" min="5" max="100" step="5" inputmode="numeric"></label>
+    </div>
+    <label class="toggle"><input type="checkbox" id="sShrink"> Zone schrumpft während des Spiels</label>
+    <label class="toggle huntOnly"><input type="checkbox" id="sShow"> Gejagte sehen die Jäger live</label>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="label"><span id="pCount">0</span> Mitspieler</div>
+      <div class="row hostOnly" style="flex:0 1 auto;justify-content:flex-end">
+        <span class="small muted huntOnly">Jäger</span>
+        <input type="number" id="nSeek" class="huntOnly" value="1" min="1" style="width:70px" aria-label="Anzahl Jäger">
+        <button id="shuffleBtn" class="ghost" style="flex:0 0 auto">Zufällig verteilen</button>
+      </div>
+    </div>
+    <div class="players" id="lPlayers"></div>
+    <p class="small muted hostOnly" style="margin:0">Tippe auf eine Rolle, um sie zu wechseln. «Leitung» spielt nicht mit und sieht alle.</p>
+  </div>
+
+  <div class="row">
+    <button id="leaveBtn" class="ghost" style="flex:0 0 auto">Verlassen</button>
+    <button id="startBtn" class="primary hostOnly">Spiel starten</button>
+    <p class="muted guestOnly" style="margin:0;text-align:right">Warte, bis die Spielleitung startet …</p>
+  </div>
+  <div class="gps small muted" id="lGps"></div>
+</section>
+
+<!-- ========== Spiel ========== -->
+<section id="game" hidden>
+  <div id="map"></div>
+  <div class="topbar">
+    <div class="bar">
+      <div>
+        <div class="phase" id="gPhase">Jagd</div>
+        <div class="timer num" id="gTimer">00:00</div>
+      </div>
+      <div class="ping" id="pingBox">
+        <div class="phase">Nächster Ping</div>
+        <div class="timer num" id="gPing">--</div>
+      </div>
+    </div>
+    <div class="sub">
+      <span class="chip" id="gRole">Rolle</span>
+      <span class="chip num" id="gInfo"></span>
+      <span class="chip num gps" id="gGps">GPS …</span>
+    </div>
+  </div>
+  <div class="bottom">
+    <div class="actions">
+      <button class="fab" id="centerBtn" aria-label="Auf mich zentrieren">◎</button>
+      <button class="big tag" id="tagBtn">Fangen</button>
+      <button class="big self" id="selfBtn" hidden>Ich wurde gefangen</button>
+      <button class="fab" id="menuBtn" aria-label="Menü">☰</button>
+    </div>
+  </div>
+  <div class="sheet" id="sheet" hidden>
+    <div class="row"><h3>Spiel <span class="num" id="sCode"></span></h3><button class="xbtn" id="closeSheet" style="flex:0 0 auto">Schliessen</button></div>
+    <div class="row hostOnly">
+      <button id="pingNow" class="ghost">Ping jetzt</button>
+      <button id="stopBtn" class="ghost" style="color:var(--red)">Spiel beenden</button>
+    </div>
+    <div id="confirmStop" class="row hostOnly" hidden>
+      <span class="small">Wirklich für alle beenden?</span>
+      <button id="stopYes" style="background:var(--red);color:#fff;flex:0 0 auto">Ja, beenden</button>
+    </div>
+    <div class="label">Spieler</div>
+    <div class="players" id="gPlayers"></div>
+    <div class="label">Verlauf</div>
+    <div class="log" id="gLog"></div>
+  </div>
+  <div class="endcard" id="endCard" hidden>
+    <div class="card">
+      <div class="label">Spiel vorbei</div>
+      <h2 id="endTitle">Ende</h2>
+      <p id="endText" class="muted" style="margin:0"></p>
+      <div class="players" id="endPlayers" style="text-align:left"></div>
+      <div class="row">
+        <button class="ghost" id="endMap">Karte ansehen</button>
+        <button class="primary hostOnly" id="againBtn">Neue Runde</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+</section>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+// ---------- Zustand ----------
+const $ = id => document.getElementById(id);
+const store = { get(k){ try{return localStorage.getItem(k)}catch{return null} }, set(k,v){ try{localStorage.setItem(k,v)}catch{} } };
+let pid = store.get('jagd.pid'); if (!pid) { pid = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('jagd.pid', pid); }
+let ws = null, S = null, myCode = store.get('jagd.code'), clockOff = 0, wantJoin = null;
+let myPos = null, testMode = false, tapAction = null, lastSent = 0, gpsErr = '';
+const params = new URLSearchParams(location.search);
+$('name').value = store.get('jagd.name') || '';
+if (params.get('code')) $('codeIn').value = params.get('code').toUpperCase();
+if (params.has('test')) { $('testMode').checked = true; }
+
+const ROLE = { hider:'Gejagt', seeker:'Jäger', A:'Rot', B:'Blau', gm:'Leitung' };
+const MODE_HELP = {
+  classic:'Die Jäger sehen die Gejagten nur bei jedem Ping. Wer die Zone verlässt, ist für alle live sichtbar. Fangen geht nur, wenn man wirklich nah dran ist.',
+  zombie:'Wie Manhunt, aber wer gefangen wird, wird zum Zombie und jagt ab sofort mit. Am Ende bleibt hoffentlich jemand übrig.',
+  ctf:'Zwei Teams. Lauf in die Basis des Gegners, um die Flagge zu holen, und bring sie in deine eigene Basis. Wer abgeschlagen wird, muss zurück in die eigene Basis. Gegner siehst du nur beim Ping, Flaggenträger immer.',
+};
+const colorFor = p => {
+  const cs = getComputedStyle(document.documentElement);
+  if (p.role==='A') return cs.getPropertyValue('--red');
+  if (p.role==='B') return cs.getPropertyValue('--blue');
+  if (p.role==='gm') return cs.getPropertyValue('--gold');
+  if (p.role==='seeker') return S && S.mode==='zombie' && p.caught ? cs.getPropertyValue('--zombie') : cs.getPropertyValue('--hunt');
+  return cs.getPropertyValue('--hide');
+};
+const roleLabel = p => (S && S.mode==='zombie' && p.role==='seeker' && p.caught) ? 'Zombie' : ROLE[p.role] || p.role;
+const roleClass = p => (S && S.mode==='zombie' && p.role==='seeker' && p.caught) ? 'r-zombie' : 'r-'+p.role;
+const isHost = () => S && S.hostPid === pid;
+const meP = () => S && S.players.find(p => p.pid === pid);
+const sNow = () => Date.now() + clockOff;
+const fmt = ms => { ms = Math.max(0, ms); const s = Math.ceil(ms/1000); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return (h? h+':'+String(m).padStart(2,'0') : String(m).padStart(2,'0')) + ':' + String(x).padStart(2,'0'); };
+const ago = t => { const s = Math.round((sNow()-t)/1000); return s<60 ? `vor ${s} s` : `vor ${Math.round(s/60)} min`; };
+function el(tag, attrs={}, ...kids){ const e=document.createElement(tag); for(const[k,v] of Object.entries(attrs)){ if(k==='class')e.className=v; else if(k.startsWith('on'))e.addEventListener(k.slice(2),v); else e.setAttribute(k,v);} for(const k of kids) if(k!=null) e.append(k); return e; }
+
+// ---------- Verbindung ----------
+function connect(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+  ws.onopen = () => {
+    if (wantJoin) ws.send(JSON.stringify(wantJoin));
+    else if (myCode && store.get('jagd.name')) ws.send(JSON.stringify({ t:'join', code:myCode, pid, name:store.get('jagd.name') }));
+  };
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.t === 'joined') { myCode = m.code; store.set('jagd.code', m.code); wantJoin = { t:'join', code:m.code, pid, name:store.get('jagd.name') }; history.replaceState(null,'',`?code=${m.code}${testMode?'&test':''}`); }
+    else if (m.t === 'state') { clockOff = m.serverTime - Date.now(); S = m; render(); }
+    else if (m.t === 'event') onEvent(m);
+    else if (m.t === 'error') showErr(m.msg);
+    else if (m.t === 'kicked') { leaveLocal(); showErr('Du wurdest aus dem Spiel entfernt.'); }
+  };
+  ws.onclose = () => { setTimeout(connect, 1500); };
+}
+const send = m => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
+function showErr(msg){
+  const t = S ? (S.phase==='lobby' ? $('lobbyErr') : null) : $('homeErr');
+  if (t) { t.textContent = msg; clearTimeout(showErr.t); showErr.t = setTimeout(()=>t.textContent='', 5000); }
+  else toast(msg, 'caught');
+}
+function leaveLocal(){ S = null; myCode = null; wantJoin = null; store.set('jagd.code',''); history.replaceState(null,'',location.pathname+(testMode?'?test':'')); render(); }
+
+function enter(kind){
+  const name = $('name').value.trim();
+  if (!name) return showErr('Bitte gib zuerst deinen Namen ein.');
+  store.set('jagd.name', name);
+  testMode = $('testMode').checked;
+  const msg = kind === 'create' ? { t:'create', pid, name } : { t:'join', pid, name, code:$('codeIn').value.trim().toUpperCase() };
+  if (kind === 'join' && msg.code.length !== 4) return showErr('Der Code hat vier Zeichen.');
+  wantJoin = msg; send(msg); startGps(); requestWake();
+}
+$('createBtn').onclick = () => enter('create');
+$('joinBtn').onclick = () => enter('join');
+$('codeIn').addEventListener('keydown', e => { if (e.key==='Enter') enter('join'); });
+$('leaveBtn').onclick = () => { send({ t:'leave' }); leaveLocal(); };
+$('shareBtn').onclick = async () => {
+  const url = `${location.origin}${location.pathname}?code=${S.code}`;
+  try { if (navigator.share) await navigator.share({ title:'Die Jagd', text:`Spiel mit! Code ${S.code}`, url }); else { await navigator.clipboard.writeText(url); $('shareBtn').textContent='Kopiert'; setTimeout(()=>$('shareBtn').textContent='Link kopieren',2000); } } catch {}
+};
+
+// ---------- GPS ----------
+let gpsWatch = null;
+function startGps(){
+  if (gpsWatch != null || testMode) return;
+  if (!navigator.geolocation) { gpsErr = 'Dieses Gerät hat kein GPS.'; return; }
+  gpsWatch = navigator.geolocation.watchPosition(p => {
+    gpsErr = '';
+    myPos = { lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy };
+    pushPos();
+  }, e => {
+    gpsErr = e.code === 1 ? 'Standortzugriff verweigert. Erlaube ihn in den Browser-Einstellungen.' : 'Kein GPS-Signal.';
+    renderGps();
+  }, { enableHighAccuracy:true, maximumAge:2000, timeout:20000 });
+}
+function pushPos(force){
+  if (!myPos) return;
+  const t = Date.now();
+  if (force || t - lastSent > 1500) { lastSent = t; send({ t:'pos', ...myPos }); }
+  renderGps(); drawMaps();
+}
+setInterval(() => pushPos(true), 5000); // regelmässig senden, auch ohne Bewegung
+function renderGps(){
+  const txt = gpsErr || (testMode ? 'Testmodus: Karte antippen setzt deine Position' : myPos ? `GPS ±${Math.round(myPos.acc)} m` : 'Suche GPS …');
+  const bad = !!gpsErr || (myPos && myPos.acc > 40);
+  for (const id of ['lGps','gGps']) { $(id).textContent = txt; $(id).classList.toggle('bad', bad); }
+}
+
+// Bildschirm wach halten
+let wake = null;
+async function requestWake(){ try { wake = await navigator.wakeLock.request('screen'); } catch {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S) requestWake(); });
+
+// ---------- Karten ----------
+const TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const ATTR = '© OpenStreetMap';
+let lobbyMap, gameMap, layers = { lobby:null, game:null }, followMe = true, didFit = { lobby:false, game:false };
+function makeMap(id, key){
+  const m = L.map(id, { zoomControl:false, attributionControl:true }).setView([47.5, 8.72], 15);
+  L.tileLayer(TILES, { maxZoom:19, attribution:ATTR }).addTo(m);
+  layers[key] = L.layerGroup().addTo(m);
+  m.on('click', e => onMapTap(e.latlng));
+  m.on('dragstart', () => { if (key==='game') followMe = false; });
+  return m;
+}
+function onMapTap(ll){
+  if (tapAction) {
+    const a = tapAction; tapAction = null; $('tapHint').hidden = true;
+    if (a === 'zone') send({ t:'zone', lat:ll.lat, lng:ll.lng, r:+$('radius').value });
+    else send({ t:'flag', team:a, lat:ll.lat, lng:ll.lng });
+    return;
+  }
+  if (testMode) { myPos = { lat:ll.lat, lng:ll.lng, acc:5 }; pushPos(true); }
+}
+function marker(p, cls){
+  const c = colorFor(p);
+  const html = `<div class="mk ${cls}"><i style="background:${c}"></i><span></span></div>`;
+  const icon = L.divIcon({ className:'', html, iconSize:[0,0] });
+  const mk = L.marker([p.lat, p.lng], { icon, interactive:false, keyboard:false });
+  mk.on('add', () => { const s = mk.getElement()?.querySelector('span'); if (s) s.textContent = p.label; });
+  return mk;
+}
+function flagMarker(team, f){
+  const icon = L.divIcon({ className:'', html:`<div class="flagmk">${team==='A'?'🚩':'<span style="filter:hue-rotate(200deg)">🚩</span>'}</div>`, iconSize:[0,0] });
+  return L.marker([f.lat, f.lng], { icon, interactive:false, keyboard:false });
+}
+function drawOn(map, key){
+  if (!map || !S) return;
+  const g = layers[key]; g.clearLayers();
+  const cs = getComputedStyle(document.documentElement);
+  const z = S.zone;
+  if (z) {
+    L.circle([z.lat, z.lng], { radius:z.r, color:cs.getPropertyValue('--gold'), weight:3, fill:true, fillOpacity:.04, interactive:false }).addTo(g);
+    if (S.settings.zoneShrink && z.rEnd < z.r - 1) L.circle([z.lat, z.lng], { radius:z.rEnd, color:cs.getPropertyValue('--gold'), weight:1.5, dashArray:'6 8', fill:false, interactive:false }).addTo(g);
+  }
+  if (S.mode === 'ctf') for (const t of ['A','B']) {
+    const f = S.flags[t]; if (!f) continue;
+    L.circle([f.lat, f.lng], { radius:S.settings.baseRadius, color:cs.getPropertyValue(t==='A'?'--red':'--blue'), weight:2, fillOpacity:.15, interactive:false }).addTo(g);
+    if (S.flagHome[t] || S.phase==='lobby') flagMarker(t, f).addTo(g);
+  }
+  for (const p of S.players) {
+    let lat = p.lat, lng = p.lng, label = p.name, cls = '';
+    if (p.pid === pid && myPos) { lat = myPos.lat; lng = myPos.lng; cls = 'me'; label = p.name + ' (du)'; }
+    if (lat == null) continue;
+    if (p.pid !== pid && !p.live && S.phase !== 'lobby' && S.phase !== 'ended') { cls = 'old'; label += ' · ' + ago(p.t); }
+    if (p.caught && S.mode !== 'zombie') cls += ' caught';
+    if (p.carrying) label = '🚩 ' + label;
+    if (p.out) label += ' · AUSSERHALB';
+    marker({ ...p, lat, lng, label }, cls).addTo(g);
+  }
+}
+function drawMaps(){
+  if (S && S.phase === 'lobby') { drawOn(lobbyMap, 'lobby'); fitOnce(lobbyMap, 'lobby'); }
+  else if (S) {
+    drawOn(gameMap, 'game'); fitOnce(gameMap, 'game');
+    if (followMe && myPos && gameMap) gameMap.panTo([myPos.lat, myPos.lng], { animate:true });
+  }
+}
+function fitOnce(map, key){
+  if (!map || didFit[key]) return;
+  if (S.zone) { map.fitBounds(L.circle([S.zone.lat,S.zone.lng],{radius:S.zone.r}).getBounds(), { padding:[20,20] }); didFit[key] = true; }
+  else if (myPos) { map.setView([myPos.lat, myPos.lng], 17); didFit[key] = true; }
+}
+
+// ---------- Lobby-Bedienung ----------
+document.querySelectorAll('#modes button').forEach(b => b.onclick = () => isHost() && send({ t:'mode', mode:b.dataset.mode }));
+$('zoneHere').onclick = () => { if (!myPos) return showErr('Noch keine Position – warte auf GPS oder tippe im Testmodus auf die Karte.'); send({ t:'zone', lat:myPos.lat, lng:myPos.lng, r:+$('radius').value }); };
+function armTap(a, text){ tapAction = a; $('tapHint').hidden = false; $('tapHint').textContent = text; }
+$('zoneTap').onclick = () => armTap('zone', 'Tippe auf die Karte, wo die Mitte der Zone sein soll.');
+$('flagA').onclick = () => armTap('A', 'Tippe auf die Karte, wo die Basis von Team Rot sein soll.');
+$('flagB').onclick = () => armTap('B', 'Tippe auf die Karte, wo die Basis von Team Blau sein soll.');
+$('radius').oninput = () => { $('radiusVal').textContent = $('radius').value + ' m'; };
+$('radius').onchange = () => { if (S && S.zone) send({ t:'zone', lat:S.zone.lat, lng:S.zone.lng, r:+$('radius').value }); };
+const settingInputs = ['sHead','sDur','sPing','sTag','sCaps','sBase','sEnd','sShrink','sShow'];
+settingInputs.forEach(id => $(id).addEventListener('change', () => {
+  send({ t:'settings', settings:{
+    headStart: Math.round(+$('sHead').value*60), duration: Math.round(+$('sDur').value*60), pingInterval:+$('sPing').value,
+    tagRadius:+$('sTag').value, capsToWin:+$('sCaps').value, baseRadius:+$('sBase').value, endRadiusPct:+$('sEnd').value,
+    zoneShrink:$('sShrink').checked, showSeekers:$('sShow').checked } });
+}));
+$('shuffleBtn').onclick = () => send({ t:'shuffle', seekers:+$('nSeek').value });
+$('startBtn').onclick = () => send({ t:'start' });
+
+function cycleRole(p){
+  const order = S.mode === 'ctf' ? ['A','B','gm'] : ['hider','seeker','gm'];
+  send({ t:'role', pid:p.pid, role: order[(order.indexOf(p.role)+1) % order.length] });
+}
+function playerRow(p, opts={}){
+  const chip = (isHost() && opts.editable) ? el('button',{ class:'chip '+roleClass(p), onclick:()=>cycleRole(p), 'aria-label':`Rolle von ${p.name} wechseln` }, roleLabel(p))
+                                          : el('span',{ class:'chip '+roleClass(p) }, roleLabel(p));
+  const nm = el('span',{ class:'nm' }); nm.textContent = p.name + (p.pid===pid?' (du)':'') + (p.host?' ★':'');
+  const extra = [];
+  if (opts.stats) {
+    const s = S.mode==='ctf' ? `${p.caps} erobert · ${p.tags} abgeschlagen` : (p.role==='seeker' ? `${p.tags} gefangen` : (p.caught?'gefangen':'entkommen'));
+    extra.push(el('span',{ class:'small muted num' }, s));
+  }
+  if (opts.live && S.phase==='running') {
+    if (p.caught && S.mode!=='zombie') extra.push(el('span',{class:'small muted'},'gefangen'));
+    if (p.respawn) extra.push(el('span',{class:'small muted'},'zurück zur Basis'));
+    if (p.carrying) extra.push(el('span',{class:'small'},'🚩'));
+    if (isHost() && ((S.mode!=='ctf' && p.role==='hider' && !p.caught) || (S.mode==='ctf' && (p.role==='A'||p.role==='B') && !p.respawn)))
+      extra.push(el('button',{ class:'chip', onclick:()=>send({t:'catch',pid:p.pid}) }, S.mode==='ctf'?'Abschlagen':'Gefangen'));
+  }
+  const row = el('div',{ class:'player' }, el('span',{ class:'dot'+(p.online?' on':''), title:p.online?'online':'offline' }), nm, ...extra, chip);
+  if (isHost() && opts.editable && p.pid !== pid) row.append(el('button',{ class:'xbtn', onclick:()=>send({t:'kick',pid:p.pid}), 'aria-label':`${p.name} entfernen` }, '✕'));
+  return row;
+}
+
+// ---------- Spiel-Bedienung ----------
+$('tagBtn').onclick = () => send({ t:'tag' });
+let selfArmed = false;
+$('selfBtn').onclick = () => {
+  if (!selfArmed) { selfArmed = true; $('selfBtn').textContent = 'Sicher? Nochmals tippen'; setTimeout(()=>{ selfArmed=false; render(); }, 3000); return; }
+  selfArmed = false; send({ t:'selfCaught' });
+};
+$('centerBtn').onclick = () => { followMe = true; if (myPos && gameMap) gameMap.setView([myPos.lat, myPos.lng], Math.max(gameMap.getZoom(), 17)); };
+$('menuBtn').onclick = () => { $('sheet').hidden = !$('sheet').hidden; render(); };
+$('closeSheet').onclick = () => { $('sheet').hidden = true; };
+$('pingNow').onclick = () => send({ t:'ping' });
+$('stopBtn').onclick = () => { $('confirmStop').hidden = false; };
+$('stopYes').onclick = () => { $('confirmStop').hidden = true; send({ t:'stop' }); };
+$('againBtn').onclick = () => send({ t:'reset' });
+$('endMap').onclick = () => { $('endCard').hidden = true; endHidden = true; };
+let endHidden = false;
+
+function toast(text, kind='info'){
+  const t = $('toast'); t.textContent = text; t.className = 'toast k-'+kind; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(()=>t.hidden=true, kind==='miss'?2000:4000);
+}
+function onEvent(m){
+  if (m.vibrate && navigator.vibrate) try { navigator.vibrate(m.vibrate); } catch {}
+  if (S && S.phase !== 'lobby' || ['start','end'].includes(m.kind)) toast(m.text, m.kind);
+  if (m.kind === 'end') endHidden = false;
+}
+
+// ---------- Darstellung ----------
+let lastPhase = null;
+function render(){
+  const inGame = S && S.phase !== 'lobby';
+  $('home').hidden = !!S; $('lobby').hidden = !S || inGame; $('game').hidden = !inGame;
+  document.querySelectorAll('.hostOnly').forEach(e => e.hidden = !isHost());
+  document.querySelectorAll('.guestOnly').forEach(e => e.hidden = !S || isHost());
+  renderGps();
+  if (!S) return;
+  if (S.phase !== lastPhase) { // Wechsel Lobby <-> Spiel: Karte neu einpassen
+    if (S.phase === 'lobby') { didFit.lobby = false; endHidden = false; }
+    if (lastPhase === 'lobby' || lastPhase === null) { didFit.game = false; followMe = true; }
+    lastPhase = S.phase;
+  }
+  if (inGame) renderGame(); else renderLobby();
+}
+
+function renderLobby(){
+  if (!lobbyMap) lobbyMap = makeMap('lobbyMap', 'lobby'); else setTimeout(()=>lobbyMap.invalidateSize(), 0);
+  const host = isHost(), ctf = S.mode === 'ctf';
+  $('lCode').textContent = S.code;
+  document.querySelectorAll('#modes button').forEach(b => { b.setAttribute('aria-pressed', b.dataset.mode === S.mode); b.disabled = !host && b.dataset.mode !== S.mode; });
+  $('modeHelp').textContent = MODE_HELP[S.mode];
+  $('mapTools').hidden = !host; $('flagTools').hidden = !host || !ctf; $('radiusWrap').hidden = !host;
+  $('zoneInfo').textContent = S.zone ? `Zone ${Math.round(S.zone.r)} m Radius` : 'Noch keine Zone (ohne Zone geht auch)';
+  if (S.zone && document.activeElement !== $('radius')) { $('radius').value = Math.round(S.zone.r); $('radiusVal').textContent = Math.round(S.zone.r)+' m'; }
+  const s = S.settings, act = document.activeElement;
+  const setv = (id, v) => { if (act !== $(id)) $(id).value = v; };
+  setv('sHead', s.headStart/60); setv('sDur', s.duration/60); setv('sPing', s.pingInterval); setv('sTag', s.tagRadius);
+  setv('sCaps', s.capsToWin); setv('sBase', s.baseRadius); setv('sEnd', s.endRadiusPct);
+  $('sShrink').checked = s.zoneShrink; $('sShow').checked = s.showSeekers;
+  settingInputs.forEach(id => $(id).disabled = !host);
+  document.querySelectorAll('.ctfOnly').forEach(e => e.hidden = !ctf);
+  document.querySelectorAll('.huntOnly').forEach(e => e.hidden = ctf || (e.closest('.hostOnly') && !host));
+  document.querySelectorAll('.shrinkOnly').forEach(e => e.hidden = !s.zoneShrink);
+  $('pCount').textContent = S.players.length;
+  $('nSeek').max = Math.max(1, S.players.length - 1);
+  const list = $('lPlayers'); list.replaceChildren(...S.players.map(p => playerRow(p, { editable:true })));
+  drawMaps();
+}
+
+function renderGame(){
+  if (!gameMap) gameMap = makeMap('map', 'game'); else setTimeout(()=>gameMap.invalidateSize(), 0);
+  const me = meP() || {}, t = sNow();
+  const ctf = S.mode === 'ctf';
+  let phase = '', time = 0;
+  if (S.phase === 'headstart') { phase = (me.role==='hider') ? 'Vorsprung – versteck dich!' : (me.role==='seeker' ? 'Warten – die Gejagten verstecken sich' : 'Vorsprung'); time = S.runAt - t; }
+  else if (S.phase === 'running') { phase = ctf ? `Rot ${S.score.A} : ${S.score.B} Blau` : 'Die Jagd läuft'; time = S.endAt - t; }
+  else { phase = 'Spiel vorbei'; time = 0; }
+  $('gPhase').textContent = phase; $('gTimer').textContent = fmt(time);
+  $('pingBox').hidden = S.phase !== 'running';
+  $('gPing').textContent = fmt(S.nextPing - t);
+  $('gRole').textContent = roleLabel(me); $('gRole').className = 'chip ' + roleClass(me);
+  const left = S.players.filter(p => p.role==='hider' && !p.caught).length;
+  let info = ctf ? (me.carrying ? '🚩 Du trägst die Flagge!' : me.respawn ? 'Zurück zur Basis!' : `Ziel: ${S.settings.capsToWin} Eroberungen`)
+                 : `${left} noch frei`;
+  if (S.zone) info += ` · Zone ${Math.round(S.zone.r)} m`;
+  if (me.out) info = '⚠ Ausserhalb der Zone · ' + info;
+  $('gInfo').textContent = info;
+
+  // Aktionsknöpfe
+  const canTag = S.phase === 'running' && (ctf ? (me.role==='A'||me.role==='B') && !me.respawn : me.role==='seeker');
+  $('tagBtn').hidden = !canTag;
+  $('tagBtn').textContent = ctf ? 'Abschlagen' : 'Fangen';
+  $('tagBtn').classList.toggle('ready', !!S.inRange);
+  $('selfBtn').hidden = !(S.phase==='running' && !ctf && me.role==='hider' && !me.caught);
+  if (!selfArmed) $('selfBtn').textContent = 'Ich wurde gefangen';
+
+  // Menü
+  if (!$('sheet').hidden) {
+    $('sCode').textContent = S.code;
+    $('gPlayers').replaceChildren(...S.players.map(p => playerRow(p, { live:true })));
+    $('gLog').replaceChildren(...S.log.map(l => el('div',{}, el('time',{}, new Date(l.t).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'})), el('span',{}, l.text))));
+  }
+  // Schlussbild
+  $('endCard').hidden = S.phase !== 'ended' || endHidden;
+  if (S.phase === 'ended') {
+    const w = S.winner;
+    $('endTitle').textContent = w==='seeker' ? (S.mode==='zombie'?'Die Zombies gewinnen':'Die Jäger gewinnen') : w==='hider' ? 'Die Gejagten gewinnen' : w==='A' ? 'Team Rot gewinnt' : w==='B' ? 'Team Blau gewinnt' : 'Unentschieden';
+    $('endText').textContent = S.reason;
+    const ranked = [...S.players].filter(p=>p.role!=='gm').sort((a,b)=> (b.caps*10+b.tags) - (a.caps*10+a.tags));
+    $('endPlayers').replaceChildren(...ranked.map(p => playerRow(p, { stats:true })));
+  }
+  drawMaps();
+}
+
+// Uhr: Countdown jede Sekunde neu zeichnen (ohne Server)
+setInterval(() => { if (S && S.phase !== 'lobby') renderGame(); }, 1000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pushPos(true); });
+
+// Start
+testMode = $('testMode').checked;
+$('testMode').onchange = () => { testMode = $('testMode').checked; renderGps(); };
+connect();
+if (myCode && store.get('jagd.name')) { startGps(); requestWake(); }
+render();
+</script>
+</body>
+</html>
