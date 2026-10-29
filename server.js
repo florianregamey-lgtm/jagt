@@ -85,19 +85,18 @@ const DEFAULTS = {
   riskPtsPerMin: 12,   // Punkte pro Minute in einer Risikozone
   pingBonusDist: 20,   // m: zwei Pings nacheinander so nah = Bonus
   pingBonusPts: 15,
-  photoPts: 25,        // Punkte für ein Foto eines Hunters
-  photoRange: 100,     // m: Hunter muss so nah sein
   distPts: 1,          // Hunter-Punkte pro 100 m Weg
   catchPts: 20,        // Hunter-Punkte pro Fang
   spotRadius: 20,      // m: Power-up-Ort einsammeln
   spotCooldown: 300,   // Sek. bis ein Power-up-Ort wieder etwas hergibt
+  spotPts: 10,         // Hunter-Punkte beim Einsammeln an einem Power-up-Ort
   capsToWin: 3,        // Flaggenraub
   baseRadius: 15,
 };
 const LIMITS = {
   headStart: [0, 3600], duration: [60, 6 * 3600], pingInterval: [15, 1800], tagRadius: [3, 50], endPct: [5, 100],
   outGrace: [5, 300], proxAlert: [10, 300], riskPtsPerMin: [0, 120], pingBonusDist: [5, 100], pingBonusPts: [0, 200],
-  photoPts: [0, 200], photoRange: [10, 500], distPts: [0, 20], catchPts: [0, 200], spotRadius: [5, 100],
+  distPts: [0, 20], catchPts: [0, 200], spotRadius: [5, 100], spotPts: [0, 200],
   spotCooldown: [10, 3600], capsToWin: [1, 20], baseRadius: [5, 60],
 };
 const ITEMS = {
@@ -119,7 +118,7 @@ function makeGame(hostPid) {
   return { code: newCode(), hostPid, mode: 'manhunt', settings: { ...DEFAULTS },
     map: { zone: null, start: null, risks: [], spots: [], flags: { A: null, B: null } },
     phase: 'lobby', startAt: 0, runAt: 0, endAt: 0, nextPing: 0, winner: null, reason: '',
-    players: new Map(), pingSnap: {}, spotReady: {}, flagHome: { A: true, B: true }, photos: [], log: [],
+    players: new Map(), pingSnap: {}, spotReady: {}, flagHome: { A: true, B: true }, log: [],
     metaDirty: true, metaJson: null, touched: now() };
 }
 const send = (ws, msg) => { if (ws && ws.readyState === 1) ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg)); };
@@ -164,7 +163,8 @@ const isOut = (g, p, z) => !!z && p.lat != null && !inPoly(p, z);
 // ---------- Ablauf ----------
 function resetPlayer(p, g) {
   Object.assign(p, { caught: false, carrying: null, respawn: false, caps: 0, tags: 0, pts: 0, dist: 0, distPaid: 0,
-    outSince: 0, lastPing: null, near: new Set(), eff: {}, inv: [], photoCd: {}, lastStep: null,
+    outSince: 0, lastPing: null, near: new Set(), eff: {}, inv: [], lastStep: null, caughtAt: 0, caughtBy: '',
+    st: { risk: 0, bonus: 0, dist: 0, catch: 0, spot: 0, spent: 0, items: 0 },
     ready: !(isHunter(p) && g.map.start) });
 }
 function startGame(g) {
@@ -172,7 +172,7 @@ function startGame(g) {
   for (const p of P(g)) { resetPlayer(p, g); p.wasRunner = isRunner(p); }
   g.startAt = t; g.runAt = t + g.settings.headStart * 1000; g.endAt = g.runAt + g.settings.duration * 1000;
   g.phase = g.settings.headStart > 0 ? 'headstart' : 'running';
-  g.nextPing = g.runAt + g.settings.pingInterval * 1000; g.pingSnap = {}; g.spotReady = {}; g.photos = [];
+  g.nextPing = g.runAt + g.settings.pingInterval * 1000; g.pingSnap = {}; g.spotReady = {};
   g.flagHome = { A: true, B: true }; g.winner = null; g.reason = '';
   addLog(g, 'Spiel gestartet');
   if (g.mode === 'ctf') ev(g, all(g), 'Los! Holt euch die gegnerische Flagge.', 'start', [300, 100, 300]);
@@ -189,7 +189,7 @@ const fmtSec = s => (s >= 60 ? `${Math.round(s / 60)} Min.` : `${s} Sek.`);
 
 function endGame(g, winner, reason) {
   if (g.phase === 'ended') return;
-  g.phase = 'ended'; g.winner = winner; g.reason = reason;
+  g.phase = 'ended'; g.winner = winner; g.reason = reason; g.endedAt = now();
   addLog(g, reason); ev(g, all(g), reason, 'end', [500, 200, 500, 200, 500]);
 }
 
@@ -211,7 +211,7 @@ function doPing(g, regular, by) {
     g.pingSnap[p.pid] = { lat: p.lat, lng: p.lng, t: p.t };
     if (regular && g.phase === 'running') {
       if (p.lastPing && dist(p.lastPing, p) <= g.settings.pingBonusDist && g.settings.pingBonusPts) {
-        p.pts += g.settings.pingBonusPts;
+        p.pts += g.settings.pingBonusPts; p.st.bonus += g.settings.pingBonusPts;
         send(p.ws, { t: 'ev', kind: 'pts', text: `Mutig! Zwei Pings am gleichen Ort: +${g.settings.pingBonusPts} Punkte`, vib: [100, 50, 100] });
       }
       p.lastPing = { lat: p.lat, lng: p.lng };
@@ -225,7 +225,8 @@ function catchPlayer(g, target, by, how) {
   if (target.caught) return;
   target.caught = true; target.eff = {};
   delete g.pingSnap[target.pid];
-  if (by) { by.tags++; by.pts += g.settings.catchPts; }
+  if (by) { by.tags++; by.pts += g.settings.catchPts; by.st.catch += g.settings.catchPts; }
+  target.caughtAt = now(); target.caughtBy = by ? by.name : how === 'zone' ? 'Zone verlassen' : how === 'gm' ? 'Spielleitung' : 'selbst gemeldet';
   const conv = g.settings.convert;
   if (conv) { target.role = 'hunter'; target.ready = true; }
   const what = how === 'zone' ? `${target.name} war zu lange ausserhalb der Zone` : by ? `${by.name} hat ${target.name} gefangen` : `${target.name} wurde gefangen`;
@@ -302,17 +303,21 @@ function logicTick(g, t) {
   // Risikozonen
   for (const p of runners) {
     const inRisk = g.map.risks.some(r => inPoly(p, r));
-    if (inRisk && s.riskPtsPerMin) { p.pts += s.riskPtsPerMin / 60; if (!p.inRisk) send(p.ws, { t: 'ev', kind: 'pts', text: `Risikozone! Du sammelst ${s.riskPtsPerMin} Punkte pro Minute.`, vib: [100, 50, 100] }); }
+    if (inRisk && s.riskPtsPerMin) { p.pts += s.riskPtsPerMin / 60; p.st.risk += s.riskPtsPerMin / 60; if (!p.inRisk) send(p.ws, { t: 'ev', kind: 'pts', text: `Risikozone! Du sammelst ${s.riskPtsPerMin} Punkte pro Minute.`, vib: [100, 50, 100] }); }
     p.inRisk = inRisk;
   }
   // Power-up-Orte für Hunter
   g.map.spots.forEach((sp, i) => {
     if ((g.spotReady[i] || 0) > t) return;
-    const h = hunters.find(p => p.ready && dist(p, { lat: sp[0], lng: sp[1] }) <= s.spotRadius && p.inv.length < 3);
+    const h = hunters.find(p => p.ready && dist(p, { lat: sp[0], lng: sp[1] }) <= s.spotRadius);
     if (!h) return;
-    const item = Math.random() < 0.5 ? 'xping' : 'nose';
-    h.inv.push(item); g.spotReady[i] = t + s.spotCooldown * 1000; dirty(g);
-    send(h.ws, { t: 'ev', kind: 'item', text: `Power-up gefunden: ${ITEMS[item].name}! Einsetzen über ⚡.`, vib: [200, 100, 200] });
+    g.spotReady[i] = t + s.spotCooldown * 1000; dirty(g);
+    h.pts += s.spotPts; h.st.spot += s.spotPts;
+    const pts = s.spotPts ? ` und +${s.spotPts} Punkte` : '';
+    if (h.inv.length < 3) {
+      const item = Math.random() < 0.5 ? 'xping' : 'nose'; h.inv.push(item);
+      send(h.ws, { t: 'ev', kind: 'item', text: `Power-up gefunden: ${ITEMS[item].name}${pts}! Einsetzen über ⚡.`, vib: [200, 100, 200] });
+    } else send(h.ws, { t: 'ev', kind: 'pts', text: `Power-up-Ort${pts}. Dein Rucksack ist voll (3 Power-ups).`, vib: [200, 100, 200] });
   });
   // Annäherungs-Warnung
   for (const r of runners) for (const h of hunters) {
@@ -395,23 +400,6 @@ function useItem(g, p, item) {
   send(p.ws, { t: 'ev', kind: 'item', text: `${it.name} aktiviert. ${it.desc}`, vib: [100, 50, 100] });
 }
 
-function handlePhoto(g, me, img) {
-  if (g.mode !== 'manhunt' || g.phase !== 'running' || !isRunner(me) || me.caught) return send(me.ws, { t: 'ev', kind: 'miss', text: 'Fotos zählen nur für Runner während der Jagd.' });
-  if (typeof img !== 'string' || !img.startsWith('data:image/jpeg;base64,') || img.length > 600000) return send(me.ws, { t: 'ev', kind: 'miss', text: 'Das Foto ist zu gross oder ungültig.' });
-  if (!fresh(me, 30000)) return send(me.ws, { t: 'ev', kind: 'miss', text: 'Dein GPS-Signal ist zu alt.' });
-  let best = null, bd = Infinity;
-  for (const h of P(g)) if (isHunter(h) && fresh(h, 30000)) { const d = dist(me, h); if (d < bd) { bd = d; best = h; } }
-  if (!best || bd > g.settings.photoRange) return send(me.ws, { t: 'ev', kind: 'miss', text: `Kein Hunter in Fotoreichweite (${g.settings.photoRange} m).` });
-  if ((me.photoCd[best.pid] || 0) > now()) return send(me.ws, { t: 'ev', kind: 'miss', text: `${best.name} hast du gerade erst fotografiert. Versuch es in ein paar Minuten wieder.` });
-  me.photoCd[best.pid] = now() + 5 * 60000;
-  me.pts += g.settings.photoPts;
-  g.photos.unshift({ id: Math.random().toString(36).slice(2, 10), t: now(), by: me.pid, byName: me.name, of: best.name, d: Math.round(bd), pts: g.settings.photoPts, img });
-  if (g.photos.length > 40) g.photos.length = 40;
-  addLog(g, `${me.name} hat ${best.name} fotografiert`);
-  send(me.ws, { t: 'ev', kind: 'pts', text: `Foto von ${best.name} (${Math.round(bd)} m): +${g.settings.photoPts} Punkte`, vib: [100, 50, 100] });
-  for (const p of P(g)) if ((p.pid === g.hostPid || isGM(p)) && p.ws?.photoView) send(p.ws, photoList(g));
-}
-const photoList = g => ({ t: 'photos', list: g.photos.map(({ id, t, byName, of, d, pts, img }) => ({ id, t, byName, of, d, pts, img })) });
 
 // ---------- Was darf wer sehen? ----------
 function metaFor(g) {
@@ -419,7 +407,12 @@ function metaFor(g) {
   g.metaDirty = false;
   g.metaJson = JSON.stringify({ t: 'meta', code: g.code, hostPid: g.hostPid, mode: g.mode, settings: g.settings, map: g.map,
     phase: g.phase, startAt: g.startAt, runAt: g.runAt, endAt: g.endAt, winner: g.winner, reason: g.reason, log: g.log, items: ITEMS,
-    roster: P(g).map(p => ({ pid: p.pid, name: p.name, role: p.role, caught: !!p.caught, ready: p.ready !== false, caps: p.caps || 0, tags: p.tags || 0, inv: (p.inv || []).length })) });
+    roster: P(g).map(p => ({ pid: p.pid, name: p.name, role: p.role, caught: !!p.caught, ready: p.ready !== false, caps: p.caps || 0, tags: p.tags || 0, inv: (p.inv || []).length,
+      // Auswertung am Spielende
+      ...(g.phase === 'ended' ? { res: { start: p.wasRunner ? 'runner' : p.role === 'A' || p.role === 'B' || p.role === 'gm' ? p.role : 'hunter', pts: Math.floor(p.pts || 0),
+        dist: Math.round(p.dist || 0), caughtMin: p.caughtAt ? Math.round((p.caughtAt - g.runAt) / 60000) : null, caughtBy: p.caughtBy || '',
+        st: Object.fromEntries(Object.entries(p.st || {}).map(([k, v]) => [k, Math.floor(v)])) } } : {}) })),
+    started: g.startAt, ended: g.endedAt || 0 });
   return g.metaJson;
 }
 function sendMeta(g) { const m = metaFor(g); for (const p of P(g)) send(p.ws, m); }
@@ -524,7 +517,7 @@ function handle(ws, m) {
             if (dt > 0 && d / dt <= 8) {
               me.dist += d;
               const due = Math.floor(me.dist / 100) * g.settings.distPts;
-              if (due > me.distPaid) { me.pts += due - me.distPaid; me.distPaid = due; }
+              if (due > me.distPaid) { me.pts += due - me.distPaid; me.st.dist += due - me.distPaid; me.distPaid = due; }
             }
             me.lastStep = { lat, lng, t };
           }
@@ -539,16 +532,13 @@ function handle(ws, m) {
       const it = ITEMS[m.item];
       if (!it || g.mode !== 'manhunt' || !running || it.who !== me.role || me.caught && it.who === 'runner') return send(ws, { t: 'ev', kind: 'miss', text: 'Das geht gerade nicht.' });
       if ((me.pts || 0) < it.cost) return send(ws, { t: 'ev', kind: 'miss', text: `Zu wenig Punkte (${it.cost} nötig).` });
-      me.pts -= it.cost; useItem(g, me, m.item); return pushNow(g);
+      me.pts -= it.cost; me.st.spent += it.cost; me.st.items++; useItem(g, me, m.item); return pushNow(g);
     }
     case 'use': {
       const i = (me.inv || []).indexOf(m.item);
       if (i < 0 || !running || !isHunter(me)) return;
-      me.inv.splice(i, 1); dirty(g); useItem(g, me, m.item); return pushNow(g);
+      me.inv.splice(i, 1); me.st.items++; dirty(g); useItem(g, me, m.item); return pushNow(g);
     }
-    case 'photo': return handlePhoto(g, me, m.img);
-    case 'photos': if (host || isGM(me)) { ws.photoView = true; send(ws, photoList(g)); } return;
-    case 'photosClose': ws.photoView = false; return;
     case 'leave':
       g.players.delete(me.pid); ws.code = null;
       if (host) { const next = P(g)[0]; if (next) { g.hostPid = next.pid; addLog(g, `${next.name} leitet jetzt das Spiel`); } else games.delete(g.code); }
@@ -609,12 +599,6 @@ function handle(ws, m) {
       else if (isRunner(p)) catchPlayer(g, p, null, 'gm');
       break;
     }
-    case 'rejectPhoto': {
-      const i = g.photos.findIndex(x => x.id === m.id); if (i < 0) return;
-      const ph = g.photos[i]; g.photos.splice(i, 1);
-      const r = g.players.get(ph.by); if (r) { r.pts = Math.max(0, r.pts - ph.pts); send(r.ws, { t: 'ev', kind: 'miss', text: `Dein Foto von ${ph.of} wurde nicht anerkannt (−${ph.pts} Punkte).` }); }
-      send(ws, photoList(g)); break;
-    }
     case 'kick': { const p = g.players.get(clean(m.pid, 40)); if (!p || p === me) return; send(p.ws, { t: 'kicked' }); g.players.delete(p.pid); addLog(g, `${p.name} wurde entfernt`); checkWin(g); break; }
     case 'start': {
       if (g.phase !== 'lobby') return;
@@ -628,7 +612,7 @@ function handle(ws, m) {
     case 'ping': if (running) doPing(g, false); break;
     case 'stop': if (running || g.phase === 'headstart') endGame(g, 'draw', 'Die Spielleitung hat das Spiel beendet.'); break;
     case 'reset': {
-      g.phase = 'lobby'; g.winner = null; g.reason = ''; g.pingSnap = {}; g.photos = [];
+      g.phase = 'lobby'; g.winner = null; g.reason = ''; g.pingSnap = {};
       for (const p of P(g)) { if (g.mode === 'manhunt' && p.wasRunner) p.role = 'runner'; resetPlayer(p, g); }
       addLog(g, 'Neue Runde vorbereitet'); break;
     }

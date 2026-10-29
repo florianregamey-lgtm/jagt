@@ -16,9 +16,10 @@ Manhunt (mit Punkten und Power-ups) und Flaggenraub (Capture the Flag) im echten
 **Punkte für Runner**
 - Risikozonen (rot): Punkte pro Minute, solange man drin ist.
 - Zwei Pings nacheinander im Umkreis von 20 m: Bonus.
-- Foto eines Hunters (📷): zählt, wenn ein Hunter im Umkreis von 100 m ist. Die Spielleitung kann Fotos prüfen und ablehnen.
 
-**Punkte für Hunter**: pro 100 m zurückgelegter Weg (nur zu Fuss/Velo, bis 8 m/s) und pro Fang.
+**Punkte für Hunter**: pro 100 m zurückgelegter Weg (nur zu Fuss/Velo, bis 8 m/s), pro Fang und an jedem ⚡-Power-up-Ort (einstellbar, Standard 10).
+
+**Auswertung**: Am Spielende zeigt die App eine Rangliste. Mit «⬇ Auswertung herunterladen» gibt es eine CSV-Datei (öffnet sich in Excel) mit allen Punkten, aufgeschlüsselt nach Risikozone, Ping-Bonus, Laufen, Fängen, Power-up-Orten, ausgegebenen Punkten und wer wann von wem gefangen wurde. Am Handy öffnet sich direkt das Teilen-Menü (z.B. für WhatsApp).
 
 **Power-ups (⚡)**
 | Für | Power-up | Kosten | Wirkung |
@@ -29,7 +30,7 @@ Manhunt (mit Punkten und Power-ups) und Flaggenraub (Capture the Flag) im echten
 | Hunter | Extra-Ping | 30 | Deckt sofort alle Runner auf |
 | Hunter | Spürnase | 35 | Nächsten Runner 45 s live sehen |
 
-Hunter bekommen an den ⚡-Orten auf der Karte ein Power-up gratis (danach 5 Min. Pause pro Ort).
+Hunter bekommen an den ⚡-Orten auf der Karte ein Power-up gratis plus Punkte (danach 5 Min. Pause pro Ort; mit vollem Rucksack von 3 Power-ups gibt es nur die Punkte).
 
 ### Flaggenraub (Capture the Flag)
 Rot gegen Blau. Gegnerische Flagge holen und in die eigene Basis bringen. Abgeschlagene müssen zurück in die eigene Basis.

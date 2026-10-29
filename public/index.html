@@ -129,7 +129,6 @@ button.chip{border-radius:999px}
 .big{flex:1;font:800 24px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:18px;border-radius:16px}
 .big.tag{background:var(--hunt);color:#1a0d04}
 .big.tag.ready{animation:pulse 1s infinite}
-.big.photo{background:var(--run);color:#04140f}
 .fab{width:56px;height:56px;padding:0;border-radius:16px;background:var(--panel);border:1px solid var(--line);font-size:20px;flex:none;display:grid;place-items:center;position:relative}
 .fab .badge{position:absolute;top:-6px;right:-6px;background:var(--gold);color:#1a1400;border-radius:999px;font:700 12px var(--display);padding:2px 6px}
 @keyframes pulse{50%{box-shadow:0 0 0 10px color-mix(in srgb,var(--hunt) 25%,transparent)}}
@@ -142,16 +141,19 @@ button.chip{border-radius:999px}
 .shopitem div{flex:1;min-width:0}
 .shopitem b{font:800 19px var(--display);display:block}
 .shopitem small{color:var(--muted)}
-.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
-.photos figure{margin:0;background:var(--bg);border-radius:10px;overflow:hidden;display:grid}
-.photos img{width:100%;aspect-ratio:3/4;object-fit:cover;max-width:100%}
-.photos figcaption{padding:6px 8px;font-size:12px;display:grid;gap:4px}
 .log{display:grid;gap:4px;font-size:14px}
 .log div{display:flex;gap:8px}
 .log time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
 .endcard{position:absolute;z-index:650;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:20px;overflow:auto}
 .endcard .card{max-width:440px;width:100%;text-align:center}
 .endcard h2{font-size:40px;line-height:1}
+.actions{justify-content:space-between}
+.restab{overflow-x:auto;text-align:left}
+.restab table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+.restab th,.restab td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.restab th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.restab td.n,.restab th.n{text-align:right}
+.restab tr.top td{color:var(--gold);font-weight:700}
 .gps.bad{color:var(--red)}
 
 /* Marker */
@@ -280,10 +282,9 @@ button.chip{border-radius:999px}
         <label>Risikozone: Punkte/Min.<input type="number" id="s_riskPtsPerMin" data-k="riskPtsPerMin" min="0" max="120" inputmode="numeric"></label>
         <label>Ping-Bonus (Punkte)<input type="number" id="s_pingBonusPts" data-k="pingBonusPts" min="0" max="200" inputmode="numeric"></label>
         <label>Ping-Bonus Radius (m)<input type="number" id="s_pingBonusDist" data-k="pingBonusDist" min="5" max="100" inputmode="numeric"></label>
-        <label>Foto von Hunter (Punkte)<input type="number" id="s_photoPts" data-k="photoPts" min="0" max="200" inputmode="numeric"></label>
-        <label>Foto-Reichweite (m)<input type="number" id="s_photoRange" data-k="photoRange" min="10" max="500" inputmode="numeric"></label>
         <label>Hunter: Punkte pro 100 m<input type="number" id="s_distPts" data-k="distPts" min="0" max="20" inputmode="numeric"></label>
         <label>Hunter: Punkte pro Fang<input type="number" id="s_catchPts" data-k="catchPts" min="0" max="200" inputmode="numeric"></label>
+        <label>Hunter: Punkte pro Power-up-Ort<input type="number" id="s_spotPts" data-k="spotPts" min="0" max="200" inputmode="numeric"></label>
         <label>Power-up-Ort: Pause (Sek.)<input type="number" id="s_spotCooldown" data-k="spotCooldown" min="10" max="3600" inputmode="numeric"></label>
       </div>
     </details>
@@ -337,12 +338,10 @@ button.chip{border-radius:999px}
     <div class="actions">
       <button class="fab" id="centerBtn" aria-label="Auf mich zentrieren">◎</button>
       <button class="big tag" id="tagBtn">Fangen</button>
-      <button class="big photo" id="photoBtn" hidden>📷 Foto</button>
       <button class="fab" id="shopBtn" aria-label="Power-ups" hidden>⚡<span class="badge" id="invBadge" hidden></span></button>
       <button class="fab" id="menuBtn" aria-label="Menü">☰</button>
     </div>
   </div>
-  <input type="file" id="photoIn" accept="image/*" capture="environment" hidden>
 
   <div class="sheet" id="shop" hidden>
     <div class="row"><h3>Power-ups</h3><span class="pts" id="shopPts" style="flex:0 0 auto"></span><button class="xbtn" data-close="shop" style="flex:0 0 auto">Schliessen</button></div>
@@ -355,7 +354,6 @@ button.chip{border-radius:999px}
     <div class="row"><h3>Spiel <span class="num" id="sCode"></span></h3><button class="xbtn" data-close="sheet" style="flex:0 0 auto">Schliessen</button></div>
     <div class="row hostOnly">
       <button id="pingNow" class="ghost sm">Ping jetzt</button>
-      <button id="photosBtn" class="ghost sm mhOnly">📷 Fotos prüfen</button>
       <button id="stopBtn" class="ghost sm" style="color:var(--red)">Spiel beenden</button>
     </div>
     <div id="confirmStop" class="row hostOnly" hidden><span class="small">Wirklich für alle beenden?</span><button id="stopYes" class="sm" style="background:var(--red);color:#fff;flex:0 0 auto">Ja, beenden</button></div>
@@ -366,18 +364,13 @@ button.chip{border-radius:999px}
     <div class="log" id="gLog"></div>
   </div>
 
-  <div class="sheet" id="photoSheet" hidden>
-    <div class="row"><h3>Fotos</h3><button class="xbtn" data-close="photoSheet" style="flex:0 0 auto">Schliessen</button></div>
-    <p class="small muted" style="margin:0">Fotos, auf denen kein Hunter zu sehen ist, kannst du ablehnen. Die Punkte werden dann abgezogen.</p>
-    <div class="photos" id="photoGrid"></div>
-  </div>
-
   <div class="endcard" id="endCard" hidden>
     <div class="card">
       <div class="label">Spiel vorbei</div>
       <h2 id="endTitle">Ende</h2>
       <p id="endText" class="muted" style="margin:0"></p>
-      <div class="players" id="endPlayers" style="text-align:left"></div>
+      <div class="restab" id="endTable"></div>
+      <button class="ghost" id="dlBtn">⬇ Auswertung herunterladen</button>
       <div class="row">
         <button class="ghost" id="endMap">Karte ansehen</button>
         <button class="primary hostOnly" id="againBtn">Neue Runde</button>
@@ -410,7 +403,7 @@ if (params.has('test')) $('testMode').checked = true;
 
 const ROLE = { runner:'Runner', hunter:'Hunter', A:'Rot', B:'Blau', gm:'Leitung' };
 const MODE_HELP = {
-  manhunt:'Hunter sehen Runner nur beim Ping. Runner sammeln Punkte in Risikozonen, mit Fotos von Huntern und wenn sie zwei Pings nacheinander am gleichen Ort bleiben. Mit Punkten kaufen sie Power-ups. Hunter sammeln Punkte durchs Laufen und Fangen und holen Power-ups an markierten Orten.',
+  manhunt:'Hunter sehen Runner nur beim Ping. Runner sammeln Punkte in Risikozonen und wenn sie zwei Pings nacheinander am gleichen Ort bleiben. Mit Punkten kaufen sie Power-ups. Hunter sammeln Punkte durchs Laufen und Fangen und holen Power-ups an markierten Orten.',
   ctf:'Zwei Teams. Lauf in die Basis des Gegners, um die Flagge zu holen, und bring sie in deine eigene Basis. Wer abgeschlagen wird, muss zurück in die eigene Basis. Gegner siehst du nur beim Ping, Flaggenträger immer.',
 };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -445,7 +438,6 @@ function connect(){
     else if (m.t === 'meta') { M = m; render(); }
     else if (m.t === 's') { clockOff = m.now - Date.now(); St = m; render(); }
     else if (m.t === 'ev') onEvent(m);
-    else if (m.t === 'photos') renderPhotos(m.list);
     else if (m.t === 'unlocked') {
       unlocked = m.ok;
       if (m.ok) { if ($('pw').value) store.set('jagd.pw', $('pw').value); $('pw').value = ''; $('pwErr').textContent = ''; }
@@ -747,30 +739,16 @@ function playerRow(p, opts={}){
 
 // ---------- Spiel-Bedienung ----------
 $('tagBtn').onclick = () => send({ t:'tag' });
-$('photoBtn').onclick = () => $('photoIn').click();
-$('photoIn').onchange = async () => {
-  const f = $('photoIn').files[0]; $('photoIn').value = ''; if (!f) return;
-  try {
-    const bmp = await createImageBitmap(f);
-    const s = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas'); c.width = Math.round(bmp.width*s); c.height = Math.round(bmp.height*s);
-    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-    let q = .7, url = c.toDataURL('image/jpeg', q);
-    while (url.length > 550000 && q > .3) { q -= .15; url = c.toDataURL('image/jpeg', q); }
-    send({ t:'photo', img:url }); toast('Foto wird geprüft …', 'info');
-  } catch { toast('Das Foto konnte nicht gelesen werden.', 'miss'); }
-};
 let selfArmed = false;
 $('selfBtn').onclick = () => {
   if (!selfArmed) { selfArmed = true; $('selfBtn').textContent = 'Sicher? Nochmals tippen'; setTimeout(()=>{ selfArmed=false; $('selfBtn').textContent='Ich wurde gefangen'; }, 3000); return; }
   selfArmed = false; send({ t:'selfCaught' }); $('sheet').hidden = true;
 };
 $('centerBtn').onclick = () => { followMe = true; if (myPos && gameMap) gameMap.setView([myPos.lat, myPos.lng], Math.max(gameMap.getZoom(), 17)); };
-const openSheet = id => { for (const s of ['sheet','shop','photoSheet']) $(s).hidden = s !== id || !$(s).hidden; if (id !== 'photoSheet') send({ t:'photosClose' }); render(); };
+const openSheet = id => { for (const s of ['sheet','shop']) $(s).hidden = s !== id || !$(s).hidden; render(); };
 $('menuBtn').onclick = () => openSheet('sheet');
 $('shopBtn').onclick = () => openSheet('shop');
-$('photosBtn').onclick = () => { openSheet('photoSheet'); send({ t:'photos' }); };
-document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; if (b.dataset.close === 'photoSheet') send({ t:'photosClose' }); });
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; });
 $('pingNow').onclick = () => send({ t:'ping' });
 $('stopBtn').onclick = () => { $('confirmStop').hidden = false; };
 $('stopYes').onclick = () => { $('confirmStop').hidden = true; send({ t:'stop' }); };
@@ -778,14 +756,6 @@ $('againBtn').onclick = () => send({ t:'reset' });
 let endHidden = false;
 $('endMap').onclick = () => { $('endCard').hidden = true; endHidden = true; };
 
-function renderPhotos(list){
-  $('photoGrid').replaceChildren(...(list.length ? list.map(ph => {
-    const img = el('img',{ alt:`Foto von ${ph.byName}`, loading:'lazy' }); img.src = ph.img;
-    const cap = el('figcaption',{}); cap.append(el('b',{}, `${ph.byName} → ${ph.of}`), el('span',{class:'muted'}, `${ph.d} m · ${new Date(ph.t).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'})} · +${ph.pts} P`),
-      el('button',{ class:'ghost sm', onclick:()=>send({ t:'rejectPhoto', id:ph.id }) }, 'Ablehnen'));
-    return el('figure',{}, img, cap);
-  }) : [el('p',{class:'muted'}, 'Noch keine Fotos.')]));
-}
 
 function toast(text, kind='info'){
   const t = $('toast'); t.textContent = text; t.className = 'toast k-'+kind; t.hidden = false;
@@ -889,7 +859,6 @@ function renderGame(){
   const canTagRole = M.phase === 'running' && (ctf ? (p.role==='A'||p.role==='B') && !p.respawn : p.role==='hunter');
   $('tagBtn').hidden = !canTagRole; $('tagBtn').textContent = ctf ? 'Abschlagen' : 'Fangen';
   $('tagBtn').classList.toggle('ready', !!m.inRange);
-  $('photoBtn').hidden = !(!ctf && M.phase === 'running' && p.role === 'runner' && !p.caught);
   $('shopBtn').hidden = !(!ctf && playing && (p.role === 'runner' || p.role === 'hunter'));
   $('invBadge').hidden = !(m.inv && m.inv.length); $('invBadge').textContent = m.inv ? m.inv.length : '';
   $('selfBtn').hidden = !(M.phase==='running' && !ctf && p.role==='runner' && !p.caught);
@@ -907,11 +876,44 @@ function renderGame(){
     const w = M.winner;
     $('endTitle').textContent = w==='hunter' ? 'Die Hunter gewinnen' : w==='runner' ? 'Die Runner gewinnen' : w==='A' ? 'Team Rot gewinnt' : w==='B' ? 'Team Blau gewinnt' : 'Spiel beendet';
     $('endText').textContent = M.reason;
-    const ranked = players().filter(x => x.role!=='gm').sort((a,b) => ctf ? (b.caps*10+b.tags) - (a.caps*10+a.tags) : b.pts - a.pts);
-    $('endPlayers').replaceChildren(...ranked.map(x => playerRow(x, { stats:true })));
+    renderResults();
   }
   drawMaps();
 }
+
+// ---------- Auswertung ----------
+function results(){
+  const ctf = M.mode === 'ctf';
+  const rs = M.roster.filter(r => r.role !== 'gm' && r.res).sort((a,b) => ctf ? (b.caps*10+b.tags) - (a.caps*10+a.tags) : b.res.pts - a.res.pts);
+  const cols = ctf
+    ? [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Team',r=>ROLE[r.role]],['Eroberungen',r=>r.caps,1],['Abgeschlagen',r=>r.tags,1]]
+    : [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Start als',r=>ROLE[r.res.start]],['Ende als',r=>ROLE[r.role]],['Punkte',r=>r.res.pts,1],
+       ['Fänge',r=>r.tags,1],['Weg (m)',r=>r.res.dist,1],['Risikozone',r=>r.res.st.risk,1],['Ping-Bonus',r=>r.res.st.bonus,1],
+       ['Lauf-Punkte',r=>r.res.st.dist,1],['Fang-Punkte',r=>r.res.st.catch,1],['Power-up-Orte',r=>r.res.st.spot,1],['Ausgegeben',r=>r.res.st.spent,1],
+       ['Power-ups',r=>r.res.st.items,1],['Gefangen nach (Min.)',r=>r.res.caughtMin ?? '',1],['Gefangen durch',r=>r.res.caughtBy]];
+  return { cols, rows: rs.map((r,i) => cols.map(([, f]) => f(r,i))) };
+}
+function renderResults(){
+  const { cols, rows } = results();
+  const show = M.mode === 'ctf' ? [0,1,2,3,4] : [0,1,2,4,5,6,14];  // kurze Tabelle am Handy, alles im Download
+  const t = el('table',{}, el('thead',{}, el('tr',{}, ...show.map(i => el('th',{ class: cols[i][2] ? 'n' : '' }, cols[i][0])))),
+    el('tbody',{}, ...rows.map((r, k) => el('tr',{ class: k === 0 ? 'top' : '' }, ...show.map(i => { const td = el('td',{ class: cols[i][2] ? 'n' : '' }); td.textContent = r[i]; return td; })))));
+  $('endTable').replaceChildren(t);
+}
+$('dlBtn').onclick = async () => {
+  const { cols, rows } = results();
+  const esc = v => { v = String(v ?? ''); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; };
+  const d = new Date(M.started || Date.now()), stamp = d.toLocaleDateString('de-CH') + ' ' + d.toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'});
+  const head = [`Die Jagd – ${M.mode === 'ctf' ? 'Flaggenraub' : 'Manhunt'};Spiel ${M.code};${stamp}`, M.reason, ''];
+  const csv = '\ufeff' + head.concat([cols.map(c => c[0]).join(';')], rows.map(r => r.map(esc).join(';'))).join('\r\n');
+  const name = `Jagd-Auswertung-${d.toISOString().slice(0,10)}-${M.code}.csv`;
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+  try { // Am Handy direkt teilen (z.B. in WhatsApp), sonst herunterladen
+    const file = new File([blob], name, { type:'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) { await navigator.share({ files:[file], title:'Jagd-Auswertung' }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = el('a',{ href:URL.createObjectURL(blob), download:name }); document.body.append(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+};
 
 function renderShop(p, m){
   $('shopPts').textContent = (m.pts || 0) + ' Punkte';
@@ -926,8 +928,8 @@ function renderShop(p, m){
     return el('div',{class:'shopitem'}, el('div',{}, el('b',{}, it.name), el('small',{}, it.desc)), b);
   }));
   $('shopHint').textContent = p.role === 'runner'
-    ? 'Punkte gibt es in Risikozonen, für Fotos von Huntern und wenn du zwei Pings nacheinander am gleichen Ort bleibst.'
-    : 'Punkte gibt es fürs Laufen und Fangen. An den ⚡-Orten auf der Karte gibt es Power-ups gratis.';
+    ? 'Punkte gibt es in Risikozonen und wenn du zwei Pings nacheinander am gleichen Ort bleibst.'
+    : `Punkte gibt es fürs Laufen und Fangen. An den ⚡-Orten auf der Karte gibt es ein Power-up gratis und +${M.settings.spotPts} Punkte.`;
 }
 
 setInterval(() => { if (M && M.phase !== 'lobby') renderGame(); }, 1000);
