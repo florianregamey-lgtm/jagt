@@ -1,1 +1,70 @@
+# Baut die Android-App (APK) und stellt sie als Download bereit:
+# https://github.com/florianregamey-lgtm/jagt/releases/download/android/Die-Jagd.apk
+name: Android-App bauen
 
+on:
+  push:
+    paths:
+      - 'app/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Pakete installieren
+        run: npm install --no-audit --no-fund
+
+      - name: Android-Projekt erzeugen
+        run: npx cap add android
+
+      - name: App-Symbol erzeugen
+        continue-on-error: true
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#121a14' --iconBackgroundColorDark '#121a14' --splashBackgroundColor '#121a14' --splashBackgroundColorDark '#121a14'
+
+      - name: Android-Projekt anpassen
+        run: node scripts/patch-android.mjs ${{ github.run_number }}
+
+      - name: Plugins übernehmen
+        run: npx cap sync android
+
+      - name: Gleichen Signatur-Schlüssel verwenden (damit Updates sich installieren lassen)
+        run: mkdir -p ~/.android && cp debug.keystore ~/.android/debug.keystore
+
+      - name: APK bauen
+        working-directory: app/android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: APK umbenennen
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Die-Jagd.apk
+
+      - name: APK als Bau-Ergebnis speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: Die-Jagd-APK
+          path: app/Die-Jagd.apk
+
+      - name: APK als öffentlichen Download veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android >/dev/null 2>&1 || gh release create android --title "Die Jagd – Android-App" --notes "Die neueste Android-App. Auf dem Handy herunterladen und installieren (unbekannte Quellen erlauben)."
+          gh release upload android Die-Jagd.apk --clobber
