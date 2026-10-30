@@ -205,6 +205,10 @@ button.chip{border-radius:999px}
     </div>
     <div class="row"><button id="createBtn" class="primary">Neues Spiel eröffnen</button></div>
   </div>
+  <a class="card" id="apkLink" href="https://github.com/florianregamey-lgtm/jagt/releases/download/android/Die-Jagd.apk" hidden style="text-decoration:none;color:inherit">
+    <b>📱 Android-App herunterladen</b>
+    <span class="small muted">Mit der App läuft das Spiel auch bei gesperrtem Bildschirm weiter.</span>
+  </a>
   <details class="card small">
     <summary class="muted">Testmodus (ohne GPS)</summary>
     <label class="toggle"><input type="checkbox" id="testMode"> Position durch Antippen der Karte setzen</label>
@@ -518,7 +522,7 @@ function showErr(msg){
   if (t) { t.textContent = msg; clearTimeout(showErr.t); showErr.t = setTimeout(()=>t.textContent='', 6000); }
   else toast(msg, 'caught');
 }
-function leaveLocal(){ M = null; St = null; myCode = null; wantJoin = null; store.set('jagd.code',''); history.replaceState(null,'',location.pathname+(testMode?'?test':'')); render(); }
+function leaveLocal(){ stopGps(); M = null; St = null; myCode = null; wantJoin = null; store.set('jagd.code',''); history.replaceState(null,'',location.pathname+(testMode?'?test':'')); render(); }
 function enter(kind){
   const name = $('name').value.trim();
   if (!name) return showErr('Bitte gib zuerst deinen Namen ein.');
@@ -538,8 +542,39 @@ $('shareBtn').onclick = async () => {
 
 // ---------- GPS: Position alle 2 Sekunden senden ----------
 let gpsWatch = null;
+// In der Android-/iOS-App: GPS läuft auch bei gesperrtem Bildschirm weiter (Hintergrund-Plugin).
+// Im Hintergrund drosselt das Handy die WebSocket-Verbindung, darum geht die Position dann per HTTP an den Server.
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+let BG = null, bgId = null, lastHttp = 0;
+async function startNativeGps(){
+  BG = window.Capacitor.registerPlugin('BackgroundGeolocation');
+  try { await window.Capacitor.registerPlugin('LocalNotifications').requestPermissions(); } catch {}
+  try {
+    bgId = await BG.addWatcher({ backgroundTitle:'Die Jagd läuft', backgroundMessage:'Deine Position wird ans Spiel übertragen.',
+      requestPermissions:true, stale:false, distanceFilter:3 }, (loc, err) => {
+      if (err) {
+        gpsErr = err.code === 'NOT_AUTHORIZED' ? 'Standort nicht erlaubt. Tippe hier, um ihn in den Einstellungen freizugeben.' : 'Kein GPS-Signal.';
+        renderGps(); return;
+      }
+      gpsErr = ''; myPos = { lat:loc.latitude, lng:loc.longitude, acc:loc.accuracy, at:Date.now() };
+      const bg = document.visibilityState !== 'visible' || !ws || ws.readyState !== 1;
+      if (bg && myCode && Date.now() - lastHttp >= 2000) {
+        lastHttp = Date.now();
+        fetch('/api/pos', { method:'POST', headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ code:myCode, pid, lat:myPos.lat, lng:myPos.lng, acc:myPos.acc }) }).catch(()=>{});
+      }
+      if (!bg) { renderGps(); drawMaps(); }
+    });
+  } catch (e) { gpsErr = 'GPS konnte nicht gestartet werden.'; renderGps(); }
+}
+function stopGps(){
+  if (NATIVE && BG && bgId != null) { BG.removeWatcher({ id:bgId }).catch(()=>{}); bgId = null; gpsWatch = null; }
+}
+['lGps','gGps'].forEach(id => document.getElementById(id).addEventListener('click', () => { if (NATIVE && BG && /Einstellungen/.test(gpsErr)) BG.openSettings(); }));
+
 function startGps(){
   if (gpsWatch != null || testMode) return;
+  if (NATIVE) { gpsWatch = 'native'; startNativeGps(); return; }
   if (!navigator.geolocation) { gpsErr = 'Dieses Gerät hat kein GPS.'; return; }
   gpsWatch = navigator.geolocation.watchPosition(p => {
     gpsErr = ''; myPos = { lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy, at:Date.now() };
@@ -1106,6 +1141,7 @@ function renderShop(p, m){
 setInterval(() => { if (M && M.phase !== 'lobby') renderGame(); }, 1000);
 testMode = $('testMode').checked;
 $('testMode').onchange = () => { testMode = $('testMode').checked; renderGps(); };
+if (/Android/i.test(navigator.userAgent) && !NATIVE) $('apkLink').hidden = false;
 connect();
 if (myCode && store.get('jagd.name')) { startGps(); requestWake(); }
 render();

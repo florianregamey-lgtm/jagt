@@ -44,6 +44,14 @@ Im Reiter Einstellungen lassen sich alle Regeln (Zeiten, Distanzen, Punkte, Scha
 ### Karte zeichnen und speichern
 Im Reiter Einstellungen zeichnet man Spielzone, Startzonen, Auftragsorte und Power-up-Orte frei auf der Karte (Eckpunkte antippen, dann «Fertig»). Fertige Karten lassen sich unter einem Namen speichern und später mit einem Tipp laden. Gespeichert wird auf dem Gerät der Spielleitung.
 
+## Android-App
+Im Ordner `app/` liegt eine Android-App (Capacitor). Sie lädt das Spiel direkt vom Server – Änderungen am Spiel sind also sofort auch in der App – und sendet die Position **auch bei gesperrtem Bildschirm** weiter (Mitteilung «Die Jagd läuft»). App- und Webseiten-Spieler spielen im selben Spiel.
+
+- GitHub baut die App automatisch (`.github/workflows/android.yml`), sobald sich etwas in `app/` ändert, oder von Hand unter **Actions → Android-App bauen → Run workflow**.
+- Download für alle: https://github.com/florianregamey-lgtm/jagt/releases/download/android/Die-Jagd.apk (auf Android-Handys zeigt die Startseite auch einen Knopf dafür).
+- Installieren: APK öffnen, «Aus dieser Quelle installieren» erlauben. Beim ersten Start Standort **«Beim Verwenden der App»** und Mitteilungen erlauben.
+- Bei Samsung, Xiaomi usw. in den Akku-Einstellungen die App auf «Nicht einschränken» stellen, sonst stoppt das Handy das GPS im Hintergrund trotzdem.
+
 ## Datenverbrauch
 Der Server schickt alle 2 Sekunden komprimierte Updates. Gemessen: etwa 3 MB pro Stunde bei 20 Spielern und 60 MB pro Stunde bei 100 Spielern. Mit echten Daten rechne mit dem Zwei- bis Dreifachen. Der Render-Gratisplan hat 5 GB pro Monat.
 

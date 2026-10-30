@@ -1,0 +1,20 @@
+{
+  "appId": "ch.diejagd.app",
+  "appName": "Die Jagd",
+  "webDir": "www",
+  "server": {
+    "url": "https://jagt-kcvy.onrender.com",
+    "cleartext": false,
+    "errorPath": "error.html"
+  },
+  "android": {
+    "useLegacyBridge": true,
+    "backgroundColor": "#121a14"
+  },
+  "ios": {
+    "backgroundColor": "#121a14"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

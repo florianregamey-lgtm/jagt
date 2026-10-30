@@ -24,6 +24,18 @@ const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
   if (p === '/') p = '/index.html';
   if (p === '/health') { res.writeHead(200); return res.end('ok'); }
+  if (p === '/api/pos' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 2000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const m = JSON.parse(body), g = games.get(clean(m.code, 6).toUpperCase()), me = g && g.players.get(clean(m.pid, 40));
+        if (me) updatePos(g, me, m);
+        res.writeHead(me ? 204 : 404); res.end();
+      } catch { res.writeHead(400); res.end(); }
+    });
+    return;
+  }
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
@@ -575,6 +587,30 @@ function validPoly(a) {
 }
 const validPt = v => (Array.isArray(v) && Math.abs(num(v[0], 999)) <= 90 && Math.abs(num(v[1], 999)) <= 180 ? [r5(v[0]), r5(v[1])] : null);
 
+function updatePos(g, me, m) {
+  const running = g.phase === 'running';
+  const lat = num(m.lat, null), lng = num(m.lng, null);
+  if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+  const acc = clamp(num(m.acc, 50), 0, 5000), t = now();
+  g.touched = t;
+      // Hunter: Punkte für zurückgelegte Strecke (nur zu Fuss/Velo-Tempo, nur mit gutem GPS)
+      if (running && isHunter(me) && g.settings.distPts && acc <= 30) {
+        if (me.lastStep) {
+          const d = dist(me.lastStep, { lat, lng }), dt = (t - me.lastStep.t) / 1000;
+          if (d >= 5) {
+            if (dt > 0 && d / dt <= 8) {
+              me.dist += d;
+              const due = Math.floor(me.dist / 100) * g.settings.distPts;
+              if (due > me.distPaid) { me.pts += due - me.distPaid; me.st.dist += due - me.distPaid; me.distPaid = due; }
+            }
+            me.lastStep = { lat, lng, t };
+          }
+        } else me.lastStep = { lat, lng, t };
+      }
+      if ((g.phase === 'headstart' || running) && acc <= 50) recordTrack(g, me, lat, lng, t);
+      me.lat = lat; me.lng = lng; me.acc = acc; me.t = t;
+}
+
 function handle(ws, m) {
   if (m.t === 'create' || m.t === 'join') {
     const pid = clean(m.pid, 40), name = clean(m.name, 20);
@@ -602,29 +638,9 @@ function handle(ws, m) {
   const host = me.pid === g.hostPid, running = g.phase === 'running';
 
   switch (m.t) {
-    case 'pos': {
-      const lat = num(m.lat, null), lng = num(m.lng, null);
-      if (lat == null || lng == null || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
-      const acc = clamp(num(m.acc, 50), 0, 5000), t = now();
-      // Hunter: Punkte für zurückgelegte Strecke (nur zu Fuss/Velo-Tempo, nur mit gutem GPS)
-      if (running && isHunter(me) && g.settings.distPts && acc <= 30) {
-        if (me.lastStep) {
-          const d = dist(me.lastStep, { lat, lng }), dt = (t - me.lastStep.t) / 1000;
-          if (d >= 5) {
-            if (dt > 0 && d / dt <= 8) {
-              me.dist += d;
-              const due = Math.floor(me.dist / 100) * g.settings.distPts;
-              if (due > me.distPaid) { me.pts += due - me.distPaid; me.st.dist += due - me.distPaid; me.distPaid = due; }
-            }
-            me.lastStep = { lat, lng, t };
-          }
-        } else me.lastStep = { lat, lng, t };
-      }
-      if ((g.phase === 'headstart' || running) && acc <= 50) recordTrack(g, me, lat, lng, t);
-      me.lat = lat; me.lng = lng; me.acc = acc; me.t = t;
-      return;
-    }
+    case 'pos': return updatePos(g, me, m);
     case 'tag': tryTag(g, me); return pushNow(g);
+
     case 'tracks': if (g.phase === 'ended') send(ws, { t: 'tracks', startAt: g.startAt, list: P(g).filter(p => !isGM(p) && p.track.length).map(p => ({ pid: p.pid, name: p.name, len: Math.round(p.trackLen), pts: p.track })) }); return;
     case 'confirmTag': answerTag(g, me, String(m.id || ''), m.yes === true); return pushNow(g);
     case 'selfCaught': if (g.mode === 'manhunt' && isRunner(me) && running) { catchPlayer(g, me, null, 'self'); pushNow(g); } return;
