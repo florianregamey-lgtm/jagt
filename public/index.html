@@ -730,9 +730,8 @@ function renderItems(){
 // Gespeicherte Spieleinstellungen (Regeln + Modus, auf diesem Gerät)
 const savedSets = () => { try { return JSON.parse(store.get('jagd.sets') || '{}'); } catch { return {}; } };
 function renderSets(){
-  const s = savedSets(), sel = $('savedSets'), cur = sel.value;
-  sel.replaceChildren(el('option',{value:''}, Object.keys(s).length ? 'Gespeicherte Einstellungen …' : 'Noch keine Einstellungen gespeichert'), ...Object.keys(s).sort().map(n => el('option',{value:n}, n)));
-  if (s[cur]) sel.value = cur;
+  const s = savedSets(), sel = $('savedSets');
+  fillSelect(sel, Object.keys(s).sort(), 'Noch keine Einstellungen gespeichert', 'Gespeicherte Einstellungen …');
   $('delSet').hidden = !s[$('setName').value.trim()];
 }
 $('saveSet').onclick = () => {
@@ -741,7 +740,8 @@ $('saveSet').onclick = () => {
   renderSets(); $('savedSets').value = n; $('saveSet').textContent = 'Gespeichert'; setTimeout(()=>$('saveSet').textContent='Speichern', 1500);
 };
 $('loadSet').onclick = () => {
-  const n = $('savedSets').value, s = savedSets()[n]; if (!s) return;
+  const n = $('savedSets').value || $('setName').value.trim(), s = savedSets()[n];
+  if (!s) return showErr('Wähle zuerst gespeicherte Einstellungen aus.');
   if (s.mode && s.mode !== M.mode) send({ t:'mode', mode:s.mode });
   send({ t:'settings', settings:s.settings }); $('setName').value = n; renderSets();
   const b = $('loadSet'); b.textContent = 'Geladen'; setTimeout(()=>b.textContent='Laden', 1500);
@@ -751,10 +751,16 @@ $('setName').oninput = renderSets;
 $('delSet').onclick = () => { const s = savedSets(); delete s[$('setName').value.trim()]; store.set('jagd.sets', JSON.stringify(s)); $('setName').value = ''; renderSets(); };
 
 const savedMaps = () => { try { return JSON.parse(store.get('jagd.maps') || '{}'); } catch { return {}; } };
+function fillSelect(sel, names, empty, full){
+  const key = names.join('\u0001');
+  if (sel.dataset.key === key) return;
+  const cur = sel.value; sel.dataset.key = key;
+  sel.replaceChildren(el('option',{value:''}, names.length ? full : empty), ...names.map(n => el('option',{value:n}, n)));
+  if (names.includes(cur)) sel.value = cur;
+}
 function renderSaved(){
-  const s = savedMaps(), sel = $('savedMaps'), cur = sel.value;
-  sel.replaceChildren(el('option',{value:''}, Object.keys(s).length ? 'Gespeicherte Karten …' : 'Noch keine Karten gespeichert'), ...Object.keys(s).sort().map(n => el('option',{value:n}, n)));
-  if (s[cur]) sel.value = cur;
+  const s = savedMaps(), sel = $('savedMaps');
+  fillSelect(sel, Object.keys(s).sort(), 'Noch keine Karten gespeichert', 'Gespeicherte Karten …');
   $('delMap').hidden = !s[$('mapName').value.trim()];
 }
 $('saveMap').onclick = () => {
@@ -763,8 +769,9 @@ $('saveMap').onclick = () => {
   renderSaved(); $('savedMaps').value = n; $('saveMap').textContent = 'Gespeichert'; setTimeout(()=>$('saveMap').textContent='Speichern', 1500);
 };
 $('loadMap').onclick = () => {
-  const s = savedMaps()[$('savedMaps').value]; if (!s) return;
-  draft = cloneMap(s.map); pushMap(); $('mapName').value = $('savedMaps').value; didFit.lobby = false;
+  const s = savedMaps()[$('savedMaps').value || $('mapName').value.trim()];
+  if (!s) return showErr('Wähle zuerst eine gespeicherte Karte aus.');
+  draft = cloneMap(s.map); pushMap(); $('mapName').value = $('savedMaps').value || $('mapName').value; didFit.lobby = false;
   if (s.mode && s.mode !== M.mode) send({ t:'mode', mode:s.mode });
   renderSaved();
 };
