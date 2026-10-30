@@ -15,7 +15,7 @@
    Dunkel zuerst (Waldboden), grosse Flächen und starker Kontrast für draussen. */
 :root{
   --bg:#121a14; --panel:#1b2620; --line:#2c3a31; --fg:#eef3ea; --muted:#9db0a2;
-  --hunt:#ff7a2f; --run:#5fd0b4; --red:#ef5350; --blue:#4f8cff; --gold:#f5c542; --risk:#ff4d6d; --start:#b48cff;
+  --hunt:#ff7a2f; --run:#5fd0b4; --red:#ef5350; --blue:#4f8cff; --gold:#f5c542; --target:#ff4d6d; --start:#b48cff;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   color-scheme:dark;
@@ -115,15 +115,26 @@ button.chip{border-radius:999px}
 .banner.danger{background:var(--red);color:#fff}
 .banner.info{background:color-mix(in srgb,var(--start) 85%,#000);color:#fff}
 .banner.good{background:color-mix(in srgb,var(--run) 80%,#000);color:#fff}
-.compass{position:absolute;z-index:500;right:max(10px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 150px);width:min(46vw,190px);max-height:48vh;overflow:auto;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:8px;display:grid;gap:4px}
-.compass .hd{display:flex;align-items:center;gap:6px}
-.compass .hd b{flex:1;font:800 15px var(--display);letter-spacing:.06em;text-transform:uppercase}
-.crow{display:flex;align-items:center;gap:6px;font-size:13px}
-.crow .ar{width:22px;height:22px;flex:none;display:grid;place-items:center;color:var(--hunt);font-size:18px;transition:transform .3s}
-.crow .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.crow .d{font-variant-numeric:tabular-nums;font-weight:600}
-.crow.close .d{color:var(--red)}
-@media (prefers-reduced-motion:reduce){.crow .ar{transition:none}}
+.compass{position:absolute;z-index:500;right:max(10px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 150px);width:104px;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:16px;padding:8px;display:grid;justify-items:center;gap:2px;text-align:center}
+.compass b{font:800 13px/1.1 var(--display);letter-spacing:.06em;text-transform:uppercase}
+.compass .dial{width:72px;height:72px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;position:relative}
+.compass .dial::before{content:"N";position:absolute;top:2px;font:700 10px var(--display);color:var(--muted)}
+.compass .ar{width:40px;height:40px;transition:transform .4s}
+.compass .xbtn{padding:4px 8px;font-size:12px}
+@media (prefers-reduced-motion:reduce){.compass .ar{transition:none}}
+.ability{flex:1;font:800 18px/1.1 var(--display);letter-spacing:.04em;text-transform:uppercase;padding:12px 10px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:grid;gap:2px}
+.ability small{font:600 12px var(--body);letter-spacing:0;text-transform:none;color:var(--muted)}
+.ability.on{background:var(--run);color:#04140f;border-color:var(--run)}
+.ability.on small{color:#04140f}
+.banner.mission{background:var(--target);color:#fff;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.banner.mission.urgent{animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.6}}
+@media (prefers-reduced-motion:reduce){.banner.mission.urgent{animation:none}}
+.pin{transform:translate(-50%,-100%);position:absolute;display:grid;justify-items:center}
+.pin i{display:block;width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--target);border:3px solid #fff;box-shadow:0 1px 4px #0009}
+.pin span{margin-top:4px;white-space:nowrap;font:700 13px var(--display);color:#fff;text-shadow:0 0 3px #000,0 0 3px #000}
+.pin.mine i{width:34px;height:34px;box-shadow:0 0 0 8px color-mix(in srgb,var(--target) 35%,transparent)}
+.pin.cand i{background:color-mix(in srgb,var(--target) 70%,#fff);width:20px;height:20px}
 .bottom{position:absolute;z-index:500;left:0;right:0;bottom:0;padding:0 max(10px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 12px) max(10px,env(safe-area-inset-left,0px))}
 .actions{display:flex;gap:8px}
 .big{flex:1;font:800 24px var(--display);letter-spacing:.06em;text-transform:uppercase;padding:18px;border-radius:16px}
@@ -251,7 +262,7 @@ button.chip{border-radius:999px}
       <div class="tools adminTools" id="tools">
         <button class="ghost sm" data-draw="zone">✏️ Spielzone zeichnen</button>
         <button class="ghost sm mhOnly" data-draw="start">✏️ Startzone Hunter</button>
-        <button class="ghost sm mhOnly" data-draw="risk">✏️ Risikozone</button>
+        <button class="ghost sm mhOnly" data-draw="target">📍 Auftragsort</button>
         <button class="ghost sm mhOnly" data-draw="spot">⚡ Power-up-Ort</button>
         <button class="ghost sm ctfOnly" data-draw="flagA" style="color:var(--red)">🚩 Basis Rot</button>
         <button class="ghost sm ctfOnly" data-draw="flagB" style="color:var(--blue)">🚩 Basis Blau</button>
@@ -286,11 +297,18 @@ button.chip{border-radius:999px}
     <label class="toggle"><input type="checkbox" id="s_zoneShrink" data-k="zoneShrink"> Zone schrumpft während des Spiels</label>
     <label class="toggle mhOnly"><input type="checkbox" id="s_showHunters" data-k="showHunters"> Runner sehen Hunter live auf der Karte</label>
     <details class="mhOnly">
-      <summary>Punkte und Power-ups</summary>
+      <summary>Aufträge und Radar (Runner)</summary>
       <div class="grid2" style="margin-top:10px">
-        <label>Risikozone: Punkte/Min.<input type="number" id="s_riskPtsPerMin" data-k="riskPtsPerMin" min="0" max="120" inputmode="numeric"></label>
-        <label>Ping-Bonus (Punkte)<input type="number" id="s_pingBonusPts" data-k="pingBonusPts" min="0" max="200" inputmode="numeric"></label>
-        <label>Ping-Bonus Radius (m)<input type="number" id="s_pingBonusDist" data-k="pingBonusDist" min="5" max="100" inputmode="numeric"></label>
+        <label>Neuer Auftrag alle (Min.)<input type="number" id="s_missionEvery" data-k="missionEvery" data-mul="60" min="2" max="120" inputmode="numeric"></label>
+        <label>Für Hunter sichtbar nach (Min.)<input type="number" id="s_missionReveal" data-k="missionReveal" data-mul="60" min="0" max="120" inputmode="numeric"></label>
+        <label>Auftragsort erreicht ab (m)<input type="number" id="s_missionRadius" data-k="missionRadius" min="5" max="100" inputmode="numeric"></label>
+        <label>Radar alle (Min.)<input type="number" id="s_radarEvery" data-k="radarEvery" data-mul="60" min="1" max="120" inputmode="numeric"></label>
+        <label>Radar-Dauer (Sek.)<input type="number" id="s_radarSecs" data-k="radarSecs" min="10" max="300" inputmode="numeric"></label>
+      </div>
+    </details>
+    <details class="mhOnly">
+      <summary>Punkte und Power-ups (Hunter)</summary>
+      <div class="grid2" style="margin-top:10px">
         <label>Hunter: Punkte pro 100 m<input type="number" id="s_distPts" data-k="distPts" min="0" max="20" inputmode="numeric"></label>
         <label>Hunter: Punkte pro Fang<input type="number" id="s_catchPts" data-k="catchPts" min="0" max="200" inputmode="numeric"></label>
         <label>Hunter: Punkte pro Power-up-Ort<input type="number" id="s_spotPts" data-k="spotPts" min="0" max="200" inputmode="numeric"></label>
@@ -335,18 +353,21 @@ button.chip{border-radius:999px}
       <span class="chip num gps" id="gGps">GPS …</span>
     </div>
     <div class="banner danger" id="bOut" hidden></div>
+    <div class="banner mission" id="bMission" hidden><span id="bMissionText"></span><b class="num" id="bMissionTime"></b></div>
     <div class="banner info" id="bStart" hidden></div>
     <div class="banner good" id="bEff" hidden></div>
   </div>
   <div class="compass" id="compass" hidden>
-    <div class="hd"><b>Hunter</b><button class="xbtn sm" id="headBtn" title="Kompass am Handy ausrichten">🧭</button></div>
-    <div id="compList"></div>
-    <div class="small muted" id="compHint">Pfeile: Norden oben</div>
+    <b>Nächster Hunter</b>
+    <div class="dial"><svg class="ar" id="compArrow" viewBox="0 0 24 24" role="img" aria-label="Richtung zum nächsten Hunter"><path d="M12 2l6 18-6-4-6 4z" fill="var(--hunt)" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"></path></svg></div>
+    <button class="xbtn" id="headBtn">🧭 ausrichten</button>
   </div>
   <div class="bottom" id="bottomBar">
     <div class="actions">
       <button class="fab" id="centerBtn" aria-label="Auf mich zentrieren">◎</button>
       <button class="big tag" id="tagBtn">Fangen</button>
+      <button class="ability" id="hideBtn" hidden>🙈 Verbergen<small id="hideSub">1× im Spiel</small></button>
+      <button class="ability" id="radarBtn" hidden>📡 Radar<small id="radarSub">bereit</small></button>
       <button class="fab" id="shopBtn" aria-label="Power-ups" hidden>⚡<span class="badge" id="invBadge" hidden></span></button>
       <button class="fab" id="menuBtn" aria-label="Menü">☰</button>
     </div>
@@ -433,7 +454,7 @@ if (params.has('test')) $('testMode').checked = true;
 
 const ROLE = { runner:'Runner', hunter:'Hunter', A:'Rot', B:'Blau', gm:'Leitung' };
 const MODE_HELP = {
-  manhunt:'Hunter sehen Runner nur beim Ping. Runner sammeln Punkte in Risikozonen und wenn sie zwei Pings nacheinander am gleichen Ort bleiben. Mit Punkten kaufen sie Power-ups. Hunter sammeln Punkte durchs Laufen und Fangen und holen Power-ups an markierten Orten.',
+  manhunt:'Bei jedem Ping sehen Hunter die Runner und Runner die Hunter. Runner bekommen regelmässig einen Auftragsort, den sie rechtzeitig erreichen müssen, und können einmal einen Ping verbergen und regelmässig das Radar nutzen. Hunter sammeln Punkte durchs Laufen und Fangen und holen Power-ups an markierten Orten.',
   ctf:'Zwei Teams. Lauf in die Basis des Gegners, um die Flagge zu holen, und bring sie in deine eigene Basis. Wer abgeschlagen wird, muss zurück in die eigene Basis. Gegner siehst du nur beim Ping, Flaggenträger immer.',
 };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -570,6 +591,11 @@ function makeMap(id, key){
   return m;
 }
 const icon = (html, cls='') => L.divIcon({ className:'', html:`<div class="${cls}">${html}</div>`, iconSize:[0,0] });
+function pin(ll, cls, label){
+  const mk = L.marker([ll[0], ll[1]], { icon:icon('<i></i><span></span>', 'pin '+cls), interactive:false, keyboard:false });
+  mk.on('add', () => { const s = mk.getElement()?.querySelector('span'); if (s) s.textContent = label; });
+  return mk;
+}
 function playerMarker(p, cls, label){
   const mk = L.marker([p.lat, p.lng], { icon:icon(`<i style="background:${colorFor(p.role)}"></i><span></span>`, 'mk '+cls), interactive:false, keyboard:false });
   mk.on('add', () => { const s = mk.getElement()?.querySelector('span'); if (s) s.textContent = label; });
@@ -581,8 +607,11 @@ function drawMapContent(g, isLobby){
   if (map.zone && !isLobby && M.settings.zoneShrink) L.polygon(map.zone, { color:css('--gold'), weight:1.5, dashArray:'6 8', fill:false, interactive:false }).addTo(g);
   if (z) L.polygon(z, { color:css('--gold'), weight:3, fillOpacity:.04, interactive:false }).addTo(g);
   if (M.mode === 'manhunt') {
-    if (map.start) L.polygon(map.start, { color:css('--start'), weight:2, dashArray:'4 6', fillOpacity:.15, interactive:false }).bindTooltip('Startzone Hunter', { permanent:true, direction:'center', className:'' }).addTo(g);
-    for (const r of map.risks) L.polygon(r, { color:css('--risk'), weight:2, fillColor:css('--risk'), fillOpacity:.25, interactive:false }).addTo(g);
+    for (const z of (map.starts || [])) L.polygon(z, { color:css('--start'), weight:2, dashArray:'4 6', fillOpacity:.15, interactive:false }).bindTooltip('Startzone', { permanent:true, direction:'center', className:'' }).addTo(g);
+    for (const t of (map.targets || [])) pin(t, 'cand', '').addTo(g);   // in der Lobby / nach dem Spiel
+    const me_ = St && St.me;
+    if (!isLobby && me_ && me_.mission) pin(me_.mission, 'mine', 'Dein Auftrag').addTo(g);
+    if (!isLobby && St && St.revealed) for (const r of St.revealed) pin(r, r[2] ? '' : 'cand', r[3] ? (r[2] ? '' : '(noch geheim) ') + r[3] : 'Ziel eines Runners').addTo(g);
     map.spots.forEach((sp, i) => {
       const cd = St && St.spots ? St.spots[i] : 0;
       L.marker(sp, { icon:icon('⚡', 'icomk'+(cd?' off':'')), interactive:false, keyboard:false }).addTo(g);
@@ -626,21 +655,21 @@ function fitOnce(map, key){
 // ---------- Karten-Editor (nur Spielleitung, nur in der Lobby) ----------
 let draft = null, drawMode = null, drawPts = [];
 const DRAW_TEXT = {
-  zone:'Spielzone: Tippe die Eckpunkte der Reihe nach an.', start:'Startzone der Hunter (z.B. Busbahnhof): Eckpunkte antippen.',
-  risk:'Risikozone: Eckpunkte antippen.', spot:'Tippe auf den Ort, an dem Hunter ein Power-up holen können.',
+  zone:'Spielzone: Tippe die Eckpunkte der Reihe nach an.', start:'Startzone der Hunter (z.B. Busbahnhof): Eckpunkte antippen. Du kannst mehrere zeichnen.',
+  target:'Tippe auf einen Auftragsort für die Runner (z.B. Brunnen, Kirche). Setze mehrere.', spot:'Tippe auf den Ort, an dem Hunter ein Power-up holen können.',
   flagA:'Tippe auf die Basis von Team Rot.', flagB:'Tippe auf die Basis von Team Blau.',
 };
-const cloneMap = m => JSON.parse(JSON.stringify(m));
+const cloneMap = m => { const c = JSON.parse(JSON.stringify(m)); if (!c.starts) c.starts = c.start ? [c.start] : []; if (!c.targets) c.targets = []; delete c.start; delete c.risks; return c; };
 function pushMap(){ send({ t:'setMap', map:draft }); }
 function startDraw(mode){
   if (!unlocked) return;
   draft = cloneMap(M.map); drawMode = mode; drawPts = [];
   $('drawbar').hidden = false; $('tools').hidden = true;
-  const poly = ['zone','start','risk'].includes(mode);
+  const poly = ['zone','start'].includes(mode);
   $('drawDone').hidden = !poly; $('drawUndo').hidden = !poly;
   updDrawText();
 }
-function updDrawText(){ $('drawText').textContent = DRAW_TEXT[drawMode] + (['zone','start','risk'].includes(drawMode) ? ` (${drawPts.length} Punkte, mindestens 3)` : ''); $('drawDone').disabled = drawPts.length < 3; }
+function updDrawText(){ $('drawText').textContent = DRAW_TEXT[drawMode] + (['zone','start'].includes(drawMode) ? ` (${drawPts.length} Punkte, mindestens 3)` : ''); $('drawDone').disabled = drawPts.length < 3; }
 function endDraw(){ drawMode = null; drawPts = []; $('drawbar').hidden = true; render(); }
 document.querySelectorAll('[data-draw]').forEach(b => b.onclick = () => startDraw(b.dataset.draw));
 $('drawUndo').onclick = () => { drawPts.pop(); updDrawText(); drawMaps(); };
@@ -648,14 +677,14 @@ $('drawCancel').onclick = () => { draft = null; endDraw(); };
 $('drawDone').onclick = () => {
   if (drawPts.length < 3) return;
   const poly = drawPts.map(p => [p[0], p[1]]);
-  if (drawMode === 'zone') draft.zone = poly; else if (drawMode === 'start') draft.start = poly; else draft.risks.push(poly);
+  if (drawMode === 'zone') draft.zone = poly; else draft.starts.push(poly);
   pushMap(); endDraw();
 };
 function onMapTap(ll){
   const pt = [ll.lat, ll.lng];
   if (drawMode && M && M.phase === 'lobby') {
-    if (['zone','start','risk'].includes(drawMode)) { drawPts.push(pt); updDrawText(); drawMaps(); return; }
-    if (drawMode === 'spot') draft.spots.push(pt); else draft.flags[drawMode === 'flagA' ? 'A' : 'B'] = pt;
+    if (['zone','start'].includes(drawMode)) { drawPts.push(pt); updDrawText(); drawMaps(); return; }
+    if (drawMode === 'spot') draft.spots.push(pt); else if (drawMode === 'target') draft.targets.push(pt); else draft.flags[drawMode === 'flagA' ? 'A' : 'B'] = pt;
     pushMap(); endDraw(); return;
   }
   if (testMode) { myPos = { lat:ll.lat, lng:ll.lng, acc:5, at:Date.now() }; send({ t:'pos', ...myPos }); renderGps(); drawMaps(); }
@@ -670,8 +699,8 @@ $('radius').onchange = () => { if (myPos) { draft = cloneMap(M.map); draft.zone 
 $('fullBtn').onclick = () => { const f = $('editor').classList.toggle('full'); $('fullBtn').textContent = f ? 'Schliessen' : 'Vollbild'; setTimeout(()=>lobbyMap && lobbyMap.invalidateSize(), 50); };
 function removeItem(kind, i){
   draft = cloneMap(M.map);
-  if (kind === 'zone') draft.zone = null; else if (kind === 'start') draft.start = null;
-  else if (kind === 'risk') draft.risks.splice(i,1); else if (kind === 'spot') draft.spots.splice(i,1); else draft.flags[kind] = null;
+  if (kind === 'zone') draft.zone = null; else if (kind === 'start') draft.starts.splice(i,1);
+  else if (kind === 'target') draft.targets.splice(i,1); else if (kind === 'spot') draft.spots.splice(i,1); else draft.flags[kind] = null;
   pushMap();
 }
 function renderItems(){
@@ -680,8 +709,9 @@ function renderItems(){
     host ? el('button',{class:'xbtn sm', onclick:()=>removeItem(kind,i), 'aria-label':text+' entfernen'}, '✕') : null);
   if (m.zone) out.push(row(css('--gold'), `Spielzone · ${fmtArea(polyArea(m.zone))}`, 'zone'));
   if (M.mode === 'manhunt') {
-    if (m.start) out.push(row(css('--start'), 'Startzone Hunter', 'start'));
-    m.risks.forEach((r,i) => out.push(row(css('--risk'), `Risikozone ${i+1}`, 'risk', i)));
+    m.starts.forEach((z,i) => out.push(row(css('--start'), `Startzone Hunter ${i+1}`, 'start', i)));
+    m.targets.forEach((t,i) => out.push(row(css('--target'), `📍 Auftragsort ${i+1}`, 'target', i)));
+    if (!m.targets.length) out.push(el('div',{class:'small muted'}, 'Ohne Auftragsorte gibt es keine Aufträge für die Runner.'));
     m.spots.forEach((s,i) => out.push(row(css('--gold'), `⚡ Power-up-Ort ${i+1}`, 'spot', i)));
   } else for (const t of ['A','B']) if (m.flags[t]) out.push(row(colorFor(t), `Basis ${t==='A'?'Rot':'Blau'}`, t));
   $('items').replaceChildren(...out);
@@ -788,6 +818,12 @@ function playerRow(p, opts={}){
 
 // ---------- Spiel-Bedienung ----------
 $('tagBtn').onclick = () => send({ t:'tag' });
+let hideArmed = false;
+$('hideBtn').onclick = () => {
+  if (!hideArmed) { hideArmed = true; $('hideSub').textContent = 'Nochmals tippen'; setTimeout(()=>{ hideArmed = false; render(); }, 3000); return; }
+  hideArmed = false; send({ t:'hide' });
+};
+$('radarBtn').onclick = () => send({ t:'radar' });
 let selfArmed = false;
 $('selfBtn').onclick = () => {
   if (!selfArmed) { selfArmed = true; $('selfBtn').textContent = 'Sicher? Nochmals tippen'; setTimeout(()=>{ selfArmed=false; $('selfBtn').textContent='Ich wurde gefangen'; }, 3000); return; }
@@ -803,6 +839,10 @@ $('stopBtn').onclick = () => { $('confirmStop').hidden = false; };
 $('stopYes').onclick = () => { $('confirmStop').hidden = true; send({ t:'stop' }); };
 $('againBtn').onclick = () => send({ t:'reset' });
 let endHidden = false;
+function fitMission(){
+  const mis = St && St.me && St.me.mission;
+  if (gameMap && mis && myPos) gameMap.fitBounds(L.latLngBounds([[myPos.lat, myPos.lng], [mis[0], mis[1]]]), { padding:[90,90], maxZoom:17 });
+}
 // ---------- Strecken nach Spielende ----------
 let tracks = null, trackOff = new Set(), trackFit = false;
 const trackColor = i => `hsl(${(i * 137.5) % 360} 85% 55%)`;
@@ -847,6 +887,7 @@ function onEvent(m){
     const n = $('lobbyNote'); n.textContent = m.text; n.hidden = false; clearTimeout(n.t); n.t = setTimeout(()=>n.hidden=true, 5000); return;
   }
   if (m.kind === 'end') endHidden = false;
+  if (m.kind === 'mission') { beep(); followMe = false; setTimeout(fitMission, 2500); }
   if (m.siren) { siren(3); alarmAt = sNow(); $('alarmText').textContent = m.text; $('alarmTime').textContent = ''; $('alarm').hidden = false; return; }
   toast(m.text, m.kind);
 }
@@ -919,27 +960,40 @@ function renderGame(){
   if (m.outLeft == null) { if (St && St.now > alarmAt + 200) $('alarm').hidden = true; } else $('alarmTime').textContent = p.role === 'hunter' ? '' : m.outLeft + ' s';
   if (m.outLeft != null) $('bOut').textContent = p.role === 'hunter' ? '⚠ Ausserhalb der Zone – du kannst nicht fangen' : `⚠ Zurück in die Zone! Noch ${m.outLeft} s`;
   $('bStart').hidden = !(playing && p.role === 'hunter' && !m.ready);
-  $('bStart').textContent = 'Geh zur Startzone (lila). Erst danach darfst du fangen.';
+  $('bStart').textContent = 'Geh zu einer Startzone (lila). Erst danach darfst du fangen.';
+  // Auftrag
+  const mis = m.mission;
+  $('bMission').hidden = !(M.phase === 'running' && mis);
+  if (mis) {
+    const d = myPos ? Math.round(L.latLng(myPos.lat, myPos.lng).distanceTo(L.latLng(mis[0], mis[1]))) : null;
+    $('bMissionText').textContent = '📍 Auftrag: zum Ort auf der Karte' + (d != null ? ' · ' + fmtD(d) : '');
+    $('bMissionTime').textContent = fmt(mis[2] * 1000 - (Date.now() + clockOff - St.now));
+    $('bMission').classList.toggle('urgent', mis[2] < 120);
+  }
   const eff = [];
   if (m.radar) eff.push(`Radar ${m.radar} s`); if (m.nose) eff.push(`Spürnase ${m.nose} s`);
-  if (m.cloak) eff.push('Tarnkappe bereit'); if (m.fake) eff.push('Falsche Fährte bereit'); if (m.inRisk && M.phase==='running') eff.push(`Risikozone: +${M.settings.riskPtsPerMin} P/Min.`);
+  if (m.cloak) eff.push('Nächster Ping: du bist verborgen');
   $('bEff').hidden = !eff.length || !playing; $('bEff').textContent = eff.join(' · ');
 
   // Kompass
-  const comp = m.comp || [];
-  $('compass').hidden = !(playing && p.role === 'runner' && !p.caught && comp.length);
-  $('compHint').textContent = heading == null ? 'Pfeile: Norden oben. 🧭 tippen, um sie am Handy auszurichten.' : 'Pfeile zeigen in Laufrichtung.';
-  $('compList').replaceChildren(...comp.map(([n, d, b]) => {
-    const ar = el('span',{ class:'ar', style:`transform:rotate(${(b - (heading||0) + 360) % 360}deg)` }, '⬆');
-    const nn = el('span',{ class:'n' }); nn.textContent = n;
-    return el('div',{ class:'crow'+(d <= M.settings.proxAlert ? ' close' : '') }, ar, nn, el('span',{class:'d'}, fmtD(d)));
-  }));
+  const comp = m.comp;
+  $('compass').hidden = !(playing && p.role === 'runner' && !p.caught && comp != null);
+  if (comp != null) $('compArrow').style.transform = `rotate(${(comp - (heading||0) + 360) % 360}deg)`;
+  $('headBtn').hidden = heading != null;
 
   // Aktionsknöpfe
   const canTagRole = M.phase === 'running' && (ctf ? (p.role==='A'||p.role==='B') && !p.respawn : p.role==='hunter');
   $('tagBtn').hidden = !canTagRole; $('tagBtn').textContent = ctf ? 'Abschlagen' : 'Fangen';
   $('tagBtn').classList.toggle('ready', !!m.inRange);
-  $('shopBtn').hidden = !(!ctf && playing && (p.role === 'runner' || p.role === 'hunter'));
+  $('shopBtn').hidden = !(!ctf && playing && p.role === 'hunter');
+  const isRun = !ctf && M.phase === 'running' && p.role === 'runner' && !p.caught;
+  $('hideBtn').hidden = $('radarBtn').hidden = !isRun;
+  if (isRun) {
+    $('hideBtn').disabled = !m.hideLeft || m.cloak; $('hideBtn').classList.toggle('on', !!m.cloak);
+    if (!hideArmed) $('hideSub').textContent = m.cloak ? 'aktiv beim nächsten Ping' : m.hideLeft ? '1× im Spiel' : 'verbraucht';
+    $('radarBtn').disabled = !!m.radarIn; $('radarBtn').classList.toggle('on', !!m.radar);
+    $('radarSub').textContent = m.radar ? `läuft noch ${m.radar} s` : m.radarIn ? 'wieder in ' + fmt(m.radarIn * 1000) : 'bereit';
+  }
   $('invBadge').hidden = !(m.inv && m.inv.length); $('invBadge').textContent = m.inv ? m.inv.length : '';
   $('selfBtn').hidden = !(M.phase==='running' && !ctf && p.role==='runner' && !p.caught);
 
@@ -968,14 +1022,14 @@ function results(){
   const cols = ctf
     ? [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Team',r=>ROLE[r.role]],['Eroberungen',r=>r.caps,1],['Abgeschlagen',r=>r.tags,1]]
     : [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Start als',r=>ROLE[r.res.start]],['Ende als',r=>ROLE[r.role]],['Punkte',r=>r.res.pts,1],
-       ['Fänge',r=>r.tags,1],['Strecke (m)',r=>r.res.walked,1],['Hunter-Weg (m)',r=>r.res.dist,1],['Risikozone',r=>r.res.st.risk,1],['Ping-Bonus',r=>r.res.st.bonus,1],
+       ['Fänge',r=>r.tags,1],['Strecke (m)',r=>r.res.walked,1],['Aufträge erfüllt',r=>r.res.st.missions,1],['Radar benutzt',r=>r.res.st.radars,1],['Ping verborgen',r=>r.res.st.hides ? 'ja' : '',0],['Hunter-Weg (m)',r=>r.res.dist,1],
        ['Lauf-Punkte',r=>r.res.st.dist,1],['Fang-Punkte',r=>r.res.st.catch,1],['Power-up-Orte',r=>r.res.st.spot,1],['Ausgegeben',r=>r.res.st.spent,1],
        ['Power-ups',r=>r.res.st.items,1],['Gefangen nach (Min.)',r=>r.res.caughtMin ?? '',1],['Gefangen durch',r=>r.res.caughtBy]];
   return { cols, rows: rs.map((r,i) => cols.map(([, f]) => f(r,i))) };
 }
 function renderResults(){
   const { cols, rows } = results();
-  const show = M.mode === 'ctf' ? [0,1,2,3,4] : [0,1,2,4,5,6];  // kurze Tabelle am Handy, alles im Download
+  const show = M.mode === 'ctf' ? [0,1,2,3,4] : [0,1,2,4,5,7];  // kurze Tabelle am Handy, alles im Download
   const t = el('table',{}, el('thead',{}, el('tr',{}, ...show.map(i => el('th',{ class: cols[i][2] ? 'n' : '' }, cols[i][0])))),
     el('tbody',{}, ...rows.map((r, k) => el('tr',{ class: k === 0 ? 'top' : '' }, ...show.map(i => { const td = el('td',{ class: cols[i][2] ? 'n' : '' }); td.textContent = r[i]; return td; })))));
   $('endTable').replaceChildren(t);
@@ -1007,9 +1061,7 @@ function renderShop(p, m){
     b.disabled = !running || (m.pts || 0) < it.cost;
     return el('div',{class:'shopitem'}, el('div',{}, el('b',{}, it.name), el('small',{}, it.desc)), b);
   }));
-  $('shopHint').textContent = p.role === 'runner'
-    ? 'Punkte gibt es in Risikozonen und wenn du zwei Pings nacheinander am gleichen Ort bleibst.'
-    : `Punkte gibt es fürs Laufen und Fangen. An den ⚡-Orten auf der Karte gibt es ein Power-up gratis und +${M.settings.spotPts} Punkte.`;
+  $('shopHint').textContent = `Punkte gibt es fürs Laufen und Fangen. An den ⚡-Orten auf der Karte gibt es ein Power-up gratis und +${M.settings.spotPts} Punkte.`;
 }
 
 setInterval(() => { if (M && M.phase !== 'lobby') renderGame(); }, 1000);

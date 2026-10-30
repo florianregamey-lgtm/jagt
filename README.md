@@ -5,31 +5,28 @@ Manhunt (mit Punkten und Power-ups) und Flaggenraub (Capture the Flag) im echten
 ## Spielmodi
 
 ### Manhunt (Runner gegen Hunter)
-- **Hunter** sehen die Runner nur bei jedem Ping. Wer die Zone verlässt, ist für alle live sichtbar.
+- **Ping** (Standard alle 2 Min.): Hunter sehen, wo die Runner sind, und Runner sehen, wo die Hunter sind. Die Positionen bleiben gestrichelt stehen, bis der nächste Ping kommt. Wer die Zone verlässt, ist für alle live sichtbar.
 - **Gefangene Runner werden Hunter** (abschaltbar).
-- **Startzone der Hunter**: Zu Beginn jeder Runde müssen alle Hunter in die vorher gezeichnete Startzone (z.B. Busbahnhof). Fangen dürfen sie erst, wenn sie dort waren *und* der Vorsprung (Standard 10 Min.) vorbei ist.
-- **Kompass** für Runner: die 10 nächsten Hunter mit Richtung und Distanz. Mit 🧭 richten sich die Pfeile nach dem Handy aus.
+- **Startzonen der Hunter**: Man kann mehrere Startzonen zeichnen (z.B. Busbahnhof und Bahnhof). Jeder Hunter muss in eine davon. Fangen darf er erst, wenn er dort war *und* der Vorsprung (Standard 10 Min.) vorbei ist.
+- **Aufträge**: Ab Ende des Vorsprungs bekommt jeder Runner alle 20 Minuten zufällig einen der gezeichneten Auftragsorte (📍). Er hat bis zum nächsten Auftrag Zeit, dorthin zu gehen (20 m Umkreis). Schafft er es nicht, wird er Hunter. Ist er nach 10 Minuten noch nicht dort, sehen die Hunter den Ort auf der Karte (aber nicht, wem er gehört).
+- **Kompass** für Runner: ein Pfeil in Richtung des nächsten Hunters, ohne Distanz. Mit «🧭 ausrichten» dreht er sich mit dem Handy.
+- **Verbergen (1× pro Spiel)**: Runner können vor einem Ping «🙈 Verbergen» tippen und erscheinen dann beim nächsten Ping nicht.
+- **Radar (alle 20 Min.)**: Runner sehen alle Hunter 60 Sekunden live. Danach bleiben die letzten Positionen bis zum nächsten Ping stehen.
 - **Warnung** an beide, wenn sich Runner und Hunter näher als 50 m kommen.
 - **Zone verlassen**: Nur die betroffene Person bekommt ein Popup mit 3 Sekunden Sirene und Countdown. Nach 30 Sekunden ist ein Runner raus.
-- **Fang bestätigen**: Der Hunter berührt den Runner und tippt auf «Fangen». Ist der Runner laut GPS in Reichweite, erscheint bei ihm «Gefangen? Ja / Nein». «Nein» wird im Verlauf festgehalten (die Spielleitung kann über ☰ einen Fang auch selbst eintragen). Antwortet der Runner nicht innert 30 Sekunden, zählt der Fang. Abschaltbar in den Einstellungen.
+- **Fang bestätigen**: Der Hunter berührt den Runner und tippt auf «Fangen». Ist der Runner laut GPS in Reichweite, erscheint bei ihm «Gefangen? Ja / Nein». Antwortet er nicht innert 30 Sekunden, zählt der Fang. Abschaltbar.
 - **Auslosen**: Die Spielleitung legt fest, wie viele Runner es gibt; wer Runner wird, entscheidet der Zufall.
-
-**Punkte für Runner**
-- Risikozonen (rot): Punkte pro Minute, solange man drin ist.
-- Zwei Pings nacheinander im Umkreis von 20 m: Bonus.
+- **Runner sammeln keine Punkte.** Punkte und der Power-up-Shop gibt es nur für Hunter.
 
 **Punkte für Hunter**: pro 100 m zurückgelegter Weg (nur zu Fuss/Velo, bis 8 m/s), pro Fang und an jedem ⚡-Power-up-Ort (einstellbar, Standard 10).
 
-**Auswertung**: Am Spielende zeigt die App eine Rangliste. Mit «⬇ Auswertung herunterladen» gibt es eine CSV-Datei (öffnet sich in Excel) mit allen Punkten, aufgeschlüsselt nach Risikozone, Ping-Bonus, Laufen, Fängen, Power-up-Orten, ausgegebenen Punkten und wer wann von wem gefangen wurde. Am Handy öffnet sich direkt das Teilen-Menü (z.B. für WhatsApp).
+**Auswertung**: Am Spielende zeigt die App eine Rangliste. Mit «⬇ Auswertung herunterladen» gibt es eine CSV-Datei (öffnet sich in Excel) mit allen Punkten, erfüllten Aufträgen, Radar/Verbergen, Laufen, Fängen, Power-up-Orten, ausgegebenen Punkten und wer wann von wem gefangen wurde. Am Handy öffnet sich direkt das Teilen-Menü (z.B. für WhatsApp).
 
 **Strecken**: Während des Spiels zeichnet der Server auf, wo alle gelaufen sind. Nach Spielende zeigt «🗺 Strecken ansehen» alle Wege farbig auf der Karte; einzelne Personen lassen sich ein- und ausblenden. Die Länge steht auch in der Auswertung.
 
-**Power-ups (⚡)**
+**Power-ups für Hunter (⚡)**
 | Für | Power-up | Kosten | Wirkung |
 |---|---|---|---|
-| Runner | Tarnkappe | 40 | Beim nächsten Ping unsichtbar |
-| Runner | Falsche Fährte | 30 | Beim nächsten Ping 150–250 m daneben |
-| Runner | Radar | 25 | Alle Hunter 60 s live sehen |
 | Hunter | Extra-Ping | 30 | Deckt sofort alle Runner auf |
 | Hunter | Spürnase | 35 | Nächsten Runner 45 s live sehen |
 
@@ -42,7 +39,7 @@ Rot gegen Blau. Gegnerische Flagge holen und in die eigene Basis bringen. Abgesc
 Modus, Karte und Regeln liegen im Reiter **Einstellungen** und sind mit dem Passwort **9655** gesperrt. Ändern lässt es sich auf Render unter *Environment* mit der Variable `ADMIN_PASSWORD`.
 
 ### Karte zeichnen und speichern
-Im Reiter Einstellungen zeichnet man Spielzone, Startzone, Risikozonen und Power-up-Orte frei auf der Karte (Eckpunkte antippen, dann «Fertig»). Fertige Karten lassen sich unter einem Namen speichern und später mit einem Tipp laden. Gespeichert wird auf dem Gerät der Spielleitung.
+Im Reiter Einstellungen zeichnet man Spielzone, Startzonen, Auftragsorte und Power-up-Orte frei auf der Karte (Eckpunkte antippen, dann «Fertig»). Fertige Karten lassen sich unter einem Namen speichern und später mit einem Tipp laden. Gespeichert wird auf dem Gerät der Spielleitung.
 
 ## Datenverbrauch
 Der Server schickt alle 2 Sekunden komprimierte Updates. Gemessen: etwa 3 MB pro Stunde bei 20 Spielern und 60 MB pro Stunde bei 100 Spielern. Mit echten Daten rechne mit dem Zwei- bis Dreifachen. Der Render-Gratisplan hat 5 GB pro Monat.

@@ -84,9 +84,11 @@ const DEFAULTS = {
   endPct: 50,          // Zonengrösse am Schluss in % (Länge)
   outGrace: 30,        // Sek. ausserhalb der Zone bis "tot"
   proxAlert: 50,       // m: Warnung, wenn Runner und Hunter so nah sind
-  riskPtsPerMin: 12,   // Punkte pro Minute in einer Risikozone
-  pingBonusDist: 20,   // m: zwei Pings nacheinander so nah = Bonus
-  pingBonusPts: 15,
+  missionEvery: 1200,  // Sek.: alle so viel bekommt jeder Runner einen Auftragsort (und so lange hat er Zeit)
+  missionReveal: 600,  // Sek.: danach sehen die Hunter den Ort, falls der Runner noch nicht dort war
+  missionRadius: 20,   // m: so nah muss man an den Auftragsort
+  radarEvery: 1200,    // Sek.: Runner können das Radar so oft einsetzen
+  radarSecs: 60,       // Sek.: so lange sieht man die Hunter live
   distPts: 1,          // Hunter-Punkte pro 100 m Weg
   catchPts: 20,        // Hunter-Punkte pro Fang
   spotRadius: 20,      // m: Power-up-Ort einsammeln
@@ -97,14 +99,12 @@ const DEFAULTS = {
 };
 const LIMITS = {
   headStart: [0, 3600], duration: [60, 6 * 3600], pingInterval: [15, 1800], tagRadius: [3, 50], endPct: [5, 100],
-  outGrace: [5, 300], proxAlert: [10, 300], riskPtsPerMin: [0, 120], pingBonusDist: [5, 100], pingBonusPts: [0, 200],
+  outGrace: [5, 300], proxAlert: [10, 300], missionEvery: [120, 7200], missionReveal: [0, 7200], missionRadius: [5, 100],
+  radarEvery: [60, 7200], radarSecs: [10, 300],
   distPts: [0, 20], catchPts: [0, 200], spotRadius: [5, 100], confirmSecs: [10, 120], spotPts: [0, 200],
   spotCooldown: [10, 3600], capsToWin: [1, 20], baseRadius: [5, 60],
 };
 const ITEMS = {
-  cloak: { name: 'Tarnkappe', cost: 40, who: 'runner', desc: 'Beim nächsten Ping wirst du nicht angezeigt.' },
-  fake: { name: 'Falsche Fährte', cost: 30, who: 'runner', desc: 'Beim nächsten Ping erscheinst du 150–250 m daneben.' },
-  radar: { name: 'Radar', cost: 25, who: 'runner', desc: 'Du siehst alle Hunter 60 Sekunden lang live.' },
   xping: { name: 'Extra-Ping', cost: 30, who: 'hunter', desc: 'Deckt sofort alle Runner auf.' },
   nose: { name: 'Spürnase', cost: 35, who: 'hunter', desc: 'Du siehst den nächsten Runner 45 Sekunden lang live.' },
 };
@@ -118,7 +118,7 @@ function newCode() {
 }
 function makeGame(hostPid) {
   return { code: newCode(), hostPid, mode: 'manhunt', settings: { ...DEFAULTS },
-    map: { zone: null, start: null, risks: [], spots: [], flags: { A: null, B: null } },
+    map: { zone: null, starts: [], targets: [], spots: [], flags: { A: null, B: null } },
     phase: 'lobby', startAt: 0, runAt: 0, endAt: 0, nextPing: 0, winner: null, reason: '',
     players: new Map(), pending: new Map(), pingSnap: {}, spotReady: {}, flagHome: { A: true, B: true }, log: [],
     metaDirty: true, metaJson: null, touched: now() };
@@ -165,9 +165,9 @@ const isOut = (g, p, z) => !!z && p.lat != null && !inPoly(p, z);
 // ---------- Ablauf ----------
 function resetPlayer(p, g) {
   Object.assign(p, { caught: false, carrying: null, respawn: false, caps: 0, tags: 0, pts: 0, dist: 0, distPaid: 0,
-    outSince: 0, lastPing: null, near: new Set(), eff: {}, inv: [], lastStep: null, caughtAt: 0, caughtBy: '', track: [], trackLen: 0,
-    st: { risk: 0, bonus: 0, dist: 0, catch: 0, spot: 0, spent: 0, items: 0 },
-    ready: !(isHunter(p) && g.map.start) });
+    outSince: 0, near: new Set(), eff: {}, inv: [], lastStep: null, mission: null, lastTarget: -1, cloakUsed: false, radarNext: 0, seen: null, seenAt: 0, caughtAt: 0, caughtBy: '', track: [], trackLen: 0,
+    st: { dist: 0, catch: 0, spot: 0, spent: 0, items: 0, missions: 0, hides: 0, radars: 0 },
+    ready: !(isHunter(p) && g.map.starts.length) });
 }
 function startGame(g) {
   const t = now();
@@ -175,7 +175,8 @@ function startGame(g) {
   g.pending = new Map();
   g.startAt = t; g.runAt = t + g.settings.headStart * 1000; g.endAt = g.runAt + g.settings.duration * 1000;
   g.phase = g.settings.headStart > 0 ? 'headstart' : 'running';
-  g.nextPing = g.runAt + g.settings.pingInterval * 1000; g.pingSnap = {}; g.spotReady = {};
+  g.nextPing = g.runAt + g.settings.pingInterval * 1000; g.pingSnap = {}; g.spotReady = {}; g.lastPingAt = 0;
+  g.nextMission = g.runAt;
   g.flagHome = { A: true, B: true }; g.winner = null; g.reason = '';
   addLog(g, 'Spiel gestartet');
   if (g.mode === 'ctf') ev(g, all(g), 'Los! Holt euch die gegnerische Flagge.', 'start', [300, 100, 300]);
@@ -183,7 +184,7 @@ function startGame(g) {
     const hs = fmtSec(g.settings.headStart);
     for (const p of P(g)) {
       if (isRunner(p)) send(p.ws, { t: 'ev', kind: 'start', text: g.settings.headStart ? `Los! Du hast ${hs}, um dich zu verstecken.` : 'Los! Lauf!', vib: [300, 100, 300] });
-      if (isHunter(p)) send(p.ws, { t: 'ev', kind: 'start', text: g.map.start ? `Geh zur Startzone. Fangen darfst du, sobald du dort warst und die ${hs} Vorsprung vorbei sind.` : `Die Runner haben ${hs} Vorsprung.`, vib: [300, 100, 300] });
+      if (isHunter(p)) send(p.ws, { t: 'ev', kind: 'start', text: g.map.starts.length ? `Geh zu einer Startzone. Fangen darfst du, sobald du dort warst und die ${hs} Vorsprung vorbei sind.` : `Die Runner haben ${hs} Vorsprung.`, vib: [300, 100, 300] });
     }
   }
   if (g.phase === 'running') doPing(g, true);
@@ -200,42 +201,32 @@ function endGame(g, winner, reason) {
 function doPing(g, regular, by) {
   const t = now();
   if (regular) g.nextPing = t + g.settings.pingInterval * 1000;
+  g.lastPingAt = t;
   for (const p of P(g)) {
     if (isGM(p) || p.lat == null) continue;
     if (g.mode === 'ctf') { g.pingSnap[p.pid] = { lat: p.lat, lng: p.lng, t: p.t }; continue; }
+    if (isHunter(p)) { g.pingSnap[p.pid] = { lat: p.lat, lng: p.lng, t: p.t }; continue; } // für die Runner
     if (!isRunner(p) || p.caught) continue;
-    if (p.eff.cloak) { delete p.eff.cloak; delete g.pingSnap[p.pid]; p.lastPing = null; send(p.ws, { t: 'ev', kind: 'item', text: 'Tarnkappe: Du wurdest beim Ping nicht angezeigt.' }); continue; }
-    if (p.eff.fake) {
-      delete p.eff.fake; p.lastPing = null;
-      const f = offset(p, 150 + Math.random() * 100, Math.random() * 360);
-      g.pingSnap[p.pid] = { lat: f.lat, lng: f.lng, t: p.t };
-      send(p.ws, { t: 'ev', kind: 'item', text: 'Falsche Fährte: Die Hunter sehen dich an einem falschen Ort.' }); continue;
-    }
+    if (p.eff.cloak) { delete p.eff.cloak; delete g.pingSnap[p.pid]; send(p.ws, { t: 'ev', kind: 'item', text: 'Ping verborgen: Die Hunter haben dich diesmal nicht gesehen.' }); continue; }
     g.pingSnap[p.pid] = { lat: p.lat, lng: p.lng, t: p.t };
-    if (regular && g.phase === 'running') {
-      if (p.lastPing && dist(p.lastPing, p) <= g.settings.pingBonusDist && g.settings.pingBonusPts) {
-        p.pts += g.settings.pingBonusPts; p.st.bonus += g.settings.pingBonusPts;
-        send(p.ws, { t: 'ev', kind: 'pts', text: `Mutig! Zwei Pings am gleichen Ort: +${g.settings.pingBonusPts} Punkte`, vib: [100, 50, 100] });
-      }
-      p.lastPing = { lat: p.lat, lng: p.lng };
-    }
   }
-  const msg = g.mode === 'ctf' ? 'Ping! Alle Positionen wurden aufgedeckt.' : by ? `Extra-Ping von ${by.name}! Die Runner wurden aufgedeckt.` : 'Ping! Die Runner wurden aufgedeckt.';
+  for (const p of P(g)) { p.seen = null; } // alte Radar-Positionen ersetzt der Ping
+  const msg = g.mode === 'ctf' ? 'Ping! Alle Positionen wurden aufgedeckt.' : by ? `Extra-Ping von ${by.name}! Die Runner wurden aufgedeckt.` : 'Ping! Runner und Hunter wurden aufgedeckt.';
   ev(g, all(g), msg, 'ping', [150, 80, 150]);
 }
 
 function catchPlayer(g, target, by, how) {
   if (target.caught) return;
   clearPending(g, target);
-  target.caught = true; target.eff = {};
+  target.caught = true; target.eff = {}; target.mission = null;
   delete g.pingSnap[target.pid];
   if (by) { by.tags++; by.pts += g.settings.catchPts; by.st.catch += g.settings.catchPts; }
-  target.caughtAt = now(); target.caughtBy = by ? by.name : how === 'zone' ? 'Zone verlassen' : how === 'gm' ? 'Spielleitung' : 'selbst gemeldet';
+  target.caughtAt = now(); target.caughtBy = by ? by.name : how === 'zone' ? 'Zone verlassen' : how === 'mission' ? 'Auftrag verpasst' : how === 'gm' ? 'Spielleitung' : 'selbst gemeldet';
   const conv = g.settings.convert;
   if (conv) { target.role = 'hunter'; target.ready = true; }
-  const what = how === 'zone' ? `${target.name} war zu lange ausserhalb der Zone` : by ? `${by.name} hat ${target.name} gefangen` : `${target.name} wurde gefangen`;
+  const what = how === 'zone' ? `${target.name} war zu lange ausserhalb der Zone` : how === 'mission' ? `${target.name} hat den Auftragsort nicht rechtzeitig erreicht` : by ? `${by.name} hat ${target.name} gefangen` : `${target.name} wurde gefangen`;
   addLog(g, what + (conv ? ' und jagt jetzt mit' : ''));
-  send(target.ws, { t: 'ev', kind: 'caught', text: (how === 'zone' ? 'Du warst zu lange ausserhalb der Zone. ' : 'Du wurdest gefangen. ') + (conv ? 'Jetzt bist du Hunter – jag die anderen!' : ''), vib: [800] });
+  send(target.ws, { t: 'ev', kind: 'caught', text: (how === 'zone' ? 'Du warst zu lange ausserhalb der Zone. ' : how === 'mission' ? 'Du hast deinen Auftragsort nicht rechtzeitig erreicht. ' : 'Du wurdest gefangen. ') + (conv ? 'Jetzt bist du Hunter – jag die anderen!' : ''), vib: [800] });
   ev(g, all(g).filter(x => x !== target.pid), what + '!', 'info', [100]);
   dirty(g); checkWin(g);
 }
@@ -278,8 +269,8 @@ function tick() {
 function logicTick(g, t) {
   const s = g.settings, running = g.phase === 'running', z = zoneNow(g);
   // Hunter erreichen die Startzone
-  if (g.map.start) for (const p of P(g)) {
-    if (isHunter(p) && !p.ready && fresh(p, 20000) && inPoly(p, g.map.start)) {
+  if (g.map.starts.length) for (const p of P(g)) {
+    if (isHunter(p) && !p.ready && fresh(p, 20000) && g.map.starts.some(z => inPoly(p, z))) {
       p.ready = true; dirty(g);
       send(p.ws, { t: 'ev', kind: 'ready', text: running ? 'Startzone erreicht – du darfst jetzt fangen!' : 'Startzone erreicht. Sobald der Vorsprung vorbei ist, darfst du fangen.', vib: [200, 100, 200] });
     }
@@ -304,12 +295,12 @@ function logicTick(g, t) {
     }
   }
   if (g.mode === 'ctf') return;
-  // Risikozonen
-  for (const p of runners) {
-    const inRisk = g.map.risks.some(r => inPoly(p, r));
-    if (inRisk && s.riskPtsPerMin) { p.pts += s.riskPtsPerMin / 60; p.st.risk += s.riskPtsPerMin / 60; if (!p.inRisk) send(p.ws, { t: 'ev', kind: 'pts', text: `Risikozone! Du sammelst ${s.riskPtsPerMin} Punkte pro Minute.`, vib: [100, 50, 100] }); }
-    p.inRisk = inRisk;
+  // Radar abgelaufen: die letzten Hunter-Positionen bleiben bis zum nächsten Ping stehen
+  for (const p of P(g)) if (p.eff.radar && p.eff.radar <= t) {
+    delete p.eff.radar; p.seenAt = t;
+    p.seen = Object.fromEntries(hunters.map(h => [h.pid, { lat: h.lat, lng: h.lng, t: h.t }]));
   }
+  missionTick(g, t);
   // Power-up-Orte für Hunter
   g.map.spots.forEach((sp, i) => {
     if ((g.spotReady[i] || 0) > t) return;
@@ -372,6 +363,51 @@ function recordTrack(g, p, lat, lng, t) {
   if (tr.length > 3000) p.track = tr.filter((_, i) => i % 2 === 0 || i === tr.length - 1);
 }
 
+// ---------- Aufträge ----------
+// Ab Ende des Vorsprungs bekommt jeder Runner alle missionEvery Sekunden zufällig einen Auftragsort.
+// Wer ihn nicht innert dieser Zeit erreicht, ist raus (wird Hunter). Nach missionReveal sehen die Hunter den Ort.
+function missionTick(g, t) {
+  const s = g.settings, T = g.map.targets;
+  if (g.mode !== 'manhunt' || !T.length) return;
+  for (const p of P(g)) {
+    const m = p.mission; if (!m) continue;
+    if (!isRunner(p) || p.caught) { p.mission = null; continue; }
+    if (fresh(p, 20000) && dist(p, { lat: m.lat, lng: m.lng }) <= s.missionRadius) {
+      p.mission = null; p.st.missions++; dirty(g);
+      send(p.ws, { t: 'ev', kind: 'ok', text: 'Auftragsort erreicht! Der nächste Auftrag kommt in ' + fmtSec(Math.max(0, Math.round((g.nextMission - t) / 1000))) + '.', vib: [200, 100, 200] });
+      addLog(g, `${p.name} hat einen Auftragsort erreicht`);
+    } else if (t >= m.until) catchPlayer(g, p, null, 'mission');
+  }
+  if (t < g.nextMission || g.phase !== 'running') return;
+  g.nextMission += s.missionEvery * 1000;
+  if (t + 60000 > g.endAt) return; // kurz vor Schluss kein neuer Auftrag mehr
+  for (const p of P(g)) {
+    if (!isRunner(p) || p.caught) continue;
+    let i = Math.floor(Math.random() * T.length);
+    if (T.length > 1 && i === p.lastTarget) i = (i + 1 + Math.floor(Math.random() * (T.length - 1))) % T.length;
+    p.lastTarget = i;
+    p.mission = { i, lat: T[i][0], lng: T[i][1], at: t, until: t + s.missionEvery * 1000 };
+    send(p.ws, { t: 'ev', kind: 'mission', text: `Neuer Auftrag! Erreiche den markierten Ort innert ${fmtSec(s.missionEvery)}, sonst bist du raus.`, vib: [300, 100, 300, 100, 300] });
+  }
+  addLog(g, 'Neue Aufträge für die Runner'); dirty(g);
+}
+
+// ---------- Fähigkeiten der Runner ----------
+function runnerAbility(g, p, what) {
+  const t = now(), s = g.settings;
+  if (g.mode !== 'manhunt' || g.phase !== 'running' || !isRunner(p) || p.caught) return send(p.ws, { t: 'ev', kind: 'miss', text: 'Das geht nur als Runner während der Jagd.' });
+  if (what === 'hide') {
+    if (p.cloakUsed) return send(p.ws, { t: 'ev', kind: 'miss', text: 'Du hast dein Verbergen schon eingesetzt.' });
+    p.cloakUsed = true; p.eff.cloak = true; p.st.hides++;
+    return send(p.ws, { t: 'ev', kind: 'item', text: 'Beim nächsten Ping wirst du nicht angezeigt.', vib: [100, 50, 100] });
+  }
+  if (what === 'radar') {
+    if (p.radarNext > t) return send(p.ws, { t: 'ev', kind: 'miss', text: `Radar wieder bereit in ${fmtSec(Math.ceil((p.radarNext - t) / 1000))}.` });
+    p.radarNext = t + s.radarEvery * 1000; p.eff.radar = t + s.radarSecs * 1000; p.st.radars++;
+    return send(p.ws, { t: 'ev', kind: 'item', text: `Radar an: Du siehst alle Hunter ${s.radarSecs} Sekunden lang live.`, vib: [100, 50, 100] });
+  }
+}
+
 // ---------- Aktionen ----------
 function tagRange(g, p) { return g.settings.tagRadius + Math.min(15, (p.acc || 0) / 2); }
 function canTag(g, p) {
@@ -431,10 +467,7 @@ function clearPending(g, runner) {
 
 function useItem(g, p, item) {
   const it = ITEMS[item]; const t = now();
-  if (item === 'cloak') p.eff.cloak = true;
-  else if (item === 'fake') p.eff.fake = true;
-  else if (item === 'radar') p.eff.radar = t + 60000;
-  else if (item === 'xping') { doPing(g, false, p); }
+  if (item === 'xping') { doPing(g, false, p); }
   else if (item === 'nose') {
     let best = null, bd = Infinity;
     for (const r of P(g)) if (isRunner(r) && !r.caught && fresh(r)) { const d = dist(p, r); if (d < bd) { bd = d; best = r; } }
@@ -449,7 +482,8 @@ function useItem(g, p, item) {
 function metaFor(g) {
   if (!g.metaDirty && g.metaJson) return g.metaJson;
   g.metaDirty = false;
-  g.metaJson = JSON.stringify({ t: 'meta', code: g.code, hostPid: g.hostPid, mode: g.mode, settings: g.settings, map: g.map,
+  const playing = g.phase === 'headstart' || g.phase === 'running';
+  g.metaJson = JSON.stringify({ t: 'meta', code: g.code, hostPid: g.hostPid, mode: g.mode, settings: g.settings, map: playing ? { ...g.map, targets: [] } : g.map, nTargets: g.map.targets.length,
     phase: g.phase, startAt: g.startAt, runAt: g.runAt, endAt: g.endAt, winner: g.winner, reason: g.reason, log: g.log, items: ITEMS,
     roster: P(g).map(p => ({ pid: p.pid, name: p.name, role: p.role, caught: !!p.caught, ready: p.ready !== false, caps: p.caps || 0, tags: p.tags || 0, inv: (p.inv || []).length,
       // Auswertung am Spielende
@@ -481,7 +515,11 @@ function stateFor(g, me) {
       }
     } else { // Runner
       if (isRunner(p)) live = true;
-      else if (isHunter(p) && (g.settings.showHunters || (me.eff.radar || 0) > t)) live = true;
+      else if (isHunter(p) && g.phase === 'running') {
+        if (g.settings.showHunters || (me.eff.radar || 0) > t) live = true;
+        else if (me.seen && me.seenAt > (g.lastPingAt || 0) && me.seen[p.pid]) pos = me.seen[p.pid];
+        else pos = g.pingSnap[p.pid];
+      }
     }
     if (live && p.lat != null) pos = p;
     if (out) f |= 4; if (p.carrying) f |= 8; if (p.respawn) f |= 16;
@@ -491,15 +529,30 @@ function stateFor(g, me) {
   const msg = { t: 's', now: t, nextPing: g.nextPing, flagHome: g.flagHome, score: { A: teamScore(g, 'A'), B: teamScore(g, 'B') }, ps,
     me: { pts: Math.floor(me.pts || 0), inv: me.inv || [], ready: me.ready !== false, outLeft: me.outSince ? Math.max(0, Math.ceil(g.settings.outGrace - (t - me.outSince) / 1000)) : null,
       radar: Math.max(0, Math.ceil((((me.eff && me.eff.radar) || 0) - t) / 1000)), nose: me.eff?.nose ? Math.ceil((me.eff.nose.until - t) / 1000) : 0,
-      cloak: !!me.eff?.cloak, fake: !!me.eff?.fake, inRisk: !!me.inRisk } };
+      cloak: !!me.eff?.cloak, hideLeft: !me.cloakUsed, radarIn: Math.max(0, Math.ceil(((me.radarNext || 0) - t) / 1000)) } };
+  if (g.mode === 'manhunt' && g.phase === 'running') {
+    if (me.mission) msg.me.mission = [me.mission.lat, me.mission.lng, Math.max(0, Math.ceil((me.mission.until - t) / 1000))];
+    msg.nextMission = g.map.targets.length ? g.nextMission : 0;
+    // Auftragsorte, die ein Runner nach missionReveal noch nicht erreicht hat: für Hunter sichtbar (ohne Namen)
+    if (isHunter(me) || isGM(me)) {
+      const seen = new Set(), list = [];
+      for (const r of P(g)) {
+        const m = r.mission; if (!m) continue;
+        const open = t - m.at >= g.settings.missionReveal * 1000;
+        if (isGM(me)) list.push([m.lat, m.lng, open ? 1 : 0, r.name]);
+        else if (open && !seen.has(m.i)) { seen.add(m.i); list.push([m.lat, m.lng, 1]); }
+      }
+      msg.revealed = list;
+    }
+  }
   msg.spots = g.map.spots.map((_, i) => (g.spotReady[i] || 0) > t ? Math.ceil((g.spotReady[i] - t) / 1000) : 0);
   // Fangen-Knopf
   if (canTag(g, me)) msg.me.inRange = targets(g, me).some(p => dist(me, p) <= tagRange(g, me));
-  // Kompass für Runner: die 10 nächsten Hunter
+  // Kompass für Runner: nur die Richtung zum nächsten Hunter
   if (g.mode === 'manhunt' && isRunner(me) && !me.caught && me.lat != null && g.phase !== 'ended') {
-    msg.me.comp = P(g).filter(h => isHunter(h) && fresh(h))
-      .map(h => [h.name, Math.round(dist(me, h)), Math.round(bearing(me, h))])
-      .sort((a, b) => a[1] - b[1]).slice(0, 10);
+    let best = null, bd = Infinity;
+    for (const h of P(g)) if (isHunter(h) && fresh(h)) { const d = dist(me, h); if (d < bd) { bd = d; best = h; } }
+    if (best) msg.me.comp = Math.round(bearing(me, best));
   }
   return JSON.stringify(msg);
 }
@@ -577,7 +630,7 @@ function handle(ws, m) {
     case 'selfCaught': if (g.mode === 'manhunt' && isRunner(me) && running) { catchPlayer(g, me, null, 'self'); pushNow(g); } return;
     case 'buy': {
       const it = ITEMS[m.item];
-      if (!it || g.mode !== 'manhunt' || !running || it.who !== me.role || me.caught && it.who === 'runner') return send(ws, { t: 'ev', kind: 'miss', text: 'Das geht gerade nicht.' });
+      if (!it || g.mode !== 'manhunt' || !running || !isHunter(me)) return send(ws, { t: 'ev', kind: 'miss', text: 'Das geht gerade nicht.' });
       if ((me.pts || 0) < it.cost) return send(ws, { t: 'ev', kind: 'miss', text: `Zu wenig Punkte (${it.cost} nötig).` });
       me.pts -= it.cost; me.st.spent += it.cost; me.st.items++; useItem(g, me, m.item); return pushNow(g);
     }
@@ -586,6 +639,8 @@ function handle(ws, m) {
       if (i < 0 || !running || !isHunter(me)) return;
       me.inv.splice(i, 1); me.st.items++; dirty(g); useItem(g, me, m.item); return pushNow(g);
     }
+    case 'hide': runnerAbility(g, me, 'hide'); return pushNow(g);
+    case 'radar': runnerAbility(g, me, 'radar'); return pushNow(g);
     case 'leave':
       g.players.delete(me.pid); ws.code = null;
       if (host) { const next = P(g)[0]; if (next) { g.hostPid = next.pid; addLog(g, `${next.name} leitet jetzt das Spiel`); } else games.delete(g.code); }
@@ -615,8 +670,8 @@ function handle(ws, m) {
       const i = m.map || {};
       g.map = {
         zone: i.zone ? validPoly(i.zone) : null,
-        start: i.start ? validPoly(i.start) : null,
-        risks: (Array.isArray(i.risks) ? i.risks : []).slice(0, 30).map(validPoly).filter(Boolean),
+        starts: (Array.isArray(i.starts) ? i.starts : i.start ? [i.start] : []).slice(0, 10).map(validPoly).filter(Boolean),
+        targets: (Array.isArray(i.targets) ? i.targets : []).slice(0, 60).map(validPt).filter(Boolean),
         spots: (Array.isArray(i.spots) ? i.spots : []).slice(0, 50).map(validPt).filter(Boolean),
         flags: { A: i.flags && validPt(i.flags.A), B: i.flags && validPt(i.flags.B) },
       };
