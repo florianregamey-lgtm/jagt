@@ -280,6 +280,15 @@ button.chip{border-radius:999px}
 
   <div class="card" data-tab="settings" data-admin>
     <div class="label">Regeln</div>
+    <div class="row adminTools" style="flex-wrap:nowrap">
+      <select id="savedSets" aria-label="Gespeicherte Spieleinstellungen"><option value="">Gespeicherte Einstellungen …</option></select>
+      <button id="loadSet" class="ghost sm" style="flex:0 0 auto">Laden</button>
+    </div>
+    <div class="row adminTools" style="flex-wrap:nowrap">
+      <input id="setName" placeholder="Name, z.B. Altstadt 2 Std." maxlength="40" aria-label="Name der Spieleinstellungen">
+      <button id="saveSet" class="ghost sm" style="flex:0 0 auto">Speichern</button>
+      <button id="delSet" class="ghost sm" style="flex:0 0 auto" hidden>Löschen</button>
+    </div>
     <div class="grid2">
       <label>Vorsprung (Min.)<input type="number" id="s_headStart" data-k="headStart" data-mul="60" min="0" max="60" step="0.5" inputmode="decimal"></label>
       <label>Spieldauer (Min.)<input type="number" id="s_duration" data-k="duration" data-mul="60" min="1" max="360" inputmode="numeric"></label>
@@ -718,6 +727,29 @@ function renderItems(){
   $('mapInfo').textContent = m.zone ? '' : 'Noch keine Spielzone (ohne Zone geht auch)';
 }
 // Gespeicherte Karten (auf diesem Gerät)
+// Gespeicherte Spieleinstellungen (Regeln + Modus, auf diesem Gerät)
+const savedSets = () => { try { return JSON.parse(store.get('jagd.sets') || '{}'); } catch { return {}; } };
+function renderSets(){
+  const s = savedSets(), sel = $('savedSets'), cur = sel.value;
+  sel.replaceChildren(el('option',{value:''}, Object.keys(s).length ? 'Gespeicherte Einstellungen …' : 'Noch keine Einstellungen gespeichert'), ...Object.keys(s).sort().map(n => el('option',{value:n}, n)));
+  if (s[cur]) sel.value = cur;
+  $('delSet').hidden = !s[$('setName').value.trim()];
+}
+$('saveSet').onclick = () => {
+  const n = $('setName').value.trim(); if (!n) return showErr('Gib den Einstellungen zuerst einen Namen.');
+  const s = savedSets(); s[n] = { settings:{ ...M.settings }, mode:M.mode, saved:Date.now() }; store.set('jagd.sets', JSON.stringify(s));
+  renderSets(); $('savedSets').value = n; $('saveSet').textContent = 'Gespeichert'; setTimeout(()=>$('saveSet').textContent='Speichern', 1500);
+};
+$('loadSet').onclick = () => {
+  const n = $('savedSets').value, s = savedSets()[n]; if (!s) return;
+  if (s.mode && s.mode !== M.mode) send({ t:'mode', mode:s.mode });
+  send({ t:'settings', settings:s.settings }); $('setName').value = n; renderSets();
+  const b = $('loadSet'); b.textContent = 'Geladen'; setTimeout(()=>b.textContent='Laden', 1500);
+};
+$('savedSets').onchange = () => { $('setName').value = $('savedSets').value; renderSets(); };
+$('setName').oninput = renderSets;
+$('delSet').onclick = () => { const s = savedSets(); delete s[$('setName').value.trim()]; store.set('jagd.sets', JSON.stringify(s)); $('setName').value = ''; renderSets(); };
+
 const savedMaps = () => { try { return JSON.parse(store.get('jagd.maps') || '{}'); } catch { return {}; } };
 function renderSaved(){
   const s = savedMaps(), sel = $('savedMaps'), cur = sel.value;
@@ -935,7 +967,7 @@ function renderLobby(){
   $('pCount').textContent = ps.length;
   $('nRun').max = Math.max(1, ps.length - 1);
   $('lPlayers').replaceChildren(...ps.map(p => playerRow(p, { editable:true })));
-  renderItems(); if (unlocked) renderSaved();
+  renderItems(); if (unlocked) { renderSaved(); renderSets(); }
   drawMaps();
 }
 
@@ -1018,12 +1050,12 @@ function renderGame(){
 // ---------- Auswertung ----------
 function results(){
   const ctf = M.mode === 'ctf';
-  const rs = M.roster.filter(r => r.role !== 'gm' && r.res).sort((a,b) => ctf ? (b.caps*10+b.tags) - (a.caps*10+a.tags) : b.res.pts - a.res.pts);
+  const rs = M.roster.filter(r => r.role !== 'gm' && r.res).sort((a,b) => ctf ? (b.caps*10+b.tags) - (a.caps*10+a.tags) : (b.res.earned - a.res.earned) || (b.res.pts - a.res.pts));
   const cols = ctf
     ? [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Team',r=>ROLE[r.role]],['Eroberungen',r=>r.caps,1],['Abgeschlagen',r=>r.tags,1]]
-    : [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Start als',r=>ROLE[r.res.start]],['Ende als',r=>ROLE[r.role]],['Punkte',r=>r.res.pts,1],
+    : [['Rang',(r,i)=>i+1,1],['Name',r=>r.name],['Start als',r=>ROLE[r.res.start]],['Ende als',r=>ROLE[r.role]],['Gesammelt',r=>r.res.earned,1],
        ['Fänge',r=>r.tags,1],['Strecke (m)',r=>r.res.walked,1],['Aufträge erfüllt',r=>r.res.st.missions,1],['Radar benutzt',r=>r.res.st.radars,1],['Ping verborgen',r=>r.res.st.hides ? 'ja' : '',0],['Hunter-Weg (m)',r=>r.res.dist,1],
-       ['Lauf-Punkte',r=>r.res.st.dist,1],['Fang-Punkte',r=>r.res.st.catch,1],['Power-up-Orte',r=>r.res.st.spot,1],['Ausgegeben',r=>r.res.st.spent,1],
+       ['Lauf-Punkte',r=>r.res.st.dist,1],['Fang-Punkte',r=>r.res.st.catch,1],['Power-up-Orte',r=>r.res.st.spot,1],['Ausgegeben',r=>r.res.st.spent,1],['Punkte übrig',r=>r.res.pts,1],
        ['Power-ups',r=>r.res.st.items,1],['Gefangen nach (Min.)',r=>r.res.caughtMin ?? '',1],['Gefangen durch',r=>r.res.caughtBy]];
   return { cols, rows: rs.map((r,i) => cols.map(([, f]) => f(r,i))) };
 }

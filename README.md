@@ -20,7 +20,7 @@ Manhunt (mit Punkten und Power-ups) und Flaggenraub (Capture the Flag) im echten
 
 **Punkte für Hunter**: pro 100 m zurückgelegter Weg (nur zu Fuss/Velo, bis 8 m/s), pro Fang und an jedem ⚡-Power-up-Ort (einstellbar, Standard 10).
 
-**Auswertung**: Am Spielende zeigt die App eine Rangliste. Mit «⬇ Auswertung herunterladen» gibt es eine CSV-Datei (öffnet sich in Excel) mit allen Punkten, erfüllten Aufträgen, Radar/Verbergen, Laufen, Fängen, Power-up-Orten, ausgegebenen Punkten und wer wann von wem gefangen wurde. Am Handy öffnet sich direkt das Teilen-Menü (z.B. für WhatsApp).
+**Auswertung**: Am Spielende zeigt die App eine Rangliste nach **gesammelten Punkten** – also allen Punkten, die jemand verdient hat, auch wenn er einen Teil davon für Power-ups ausgegeben hat. Im Download stehen zusätzlich die ausgegebenen und die übrigen Punkte. Mit «⬇ Auswertung herunterladen» gibt es eine CSV-Datei (öffnet sich in Excel) mit allen Punkten, erfüllten Aufträgen, Radar/Verbergen, Laufen, Fängen, Power-up-Orten, ausgegebenen Punkten und wer wann von wem gefangen wurde. Am Handy öffnet sich direkt das Teilen-Menü (z.B. für WhatsApp).
 
 **Strecken**: Während des Spiels zeichnet der Server auf, wo alle gelaufen sind. Nach Spielende zeigt «🗺 Strecken ansehen» alle Wege farbig auf der Karte; einzelne Personen lassen sich ein- und ausblenden. Die Länge steht auch in der Auswertung.
 
@@ -37,6 +37,9 @@ Rot gegen Blau. Gegnerische Flagge holen und in die eigene Basis bringen. Abgesc
 
 ### Einstellungen mit Passwort
 Modus, Karte und Regeln liegen im Reiter **Einstellungen** und sind mit dem Passwort **9655** gesperrt. Ändern lässt es sich auf Render unter *Environment* mit der Variable `ADMIN_PASSWORD`.
+
+### Spieleinstellungen speichern
+Im Reiter Einstellungen lassen sich alle Regeln (Zeiten, Distanzen, Punkte, Schalter) zusammen mit dem Spielmodus unter einem Namen speichern und später mit einem Tipp laden – unabhängig von der Karte. Gespeichert wird auf dem Gerät der Spielleitung.
 
 ### Karte zeichnen und speichern
 Im Reiter Einstellungen zeichnet man Spielzone, Startzonen, Auftragsorte und Power-up-Orte frei auf der Karte (Eckpunkte antippen, dann «Fertig»). Fertige Karten lassen sich unter einem Namen speichern und später mit einem Tipp laden. Gespeichert wird auf dem Gerät der Spielleitung.

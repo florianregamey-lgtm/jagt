@@ -487,7 +487,7 @@ function metaFor(g) {
     phase: g.phase, startAt: g.startAt, runAt: g.runAt, endAt: g.endAt, winner: g.winner, reason: g.reason, log: g.log, items: ITEMS,
     roster: P(g).map(p => ({ pid: p.pid, name: p.name, role: p.role, caught: !!p.caught, ready: p.ready !== false, caps: p.caps || 0, tags: p.tags || 0, inv: (p.inv || []).length,
       // Auswertung am Spielende
-      ...(g.phase === 'ended' ? { res: { start: p.wasRunner ? 'runner' : p.role === 'A' || p.role === 'B' || p.role === 'gm' ? p.role : 'hunter', pts: Math.floor(p.pts || 0),
+      ...(g.phase === 'ended' ? { res: { start: p.wasRunner ? 'runner' : p.role === 'A' || p.role === 'B' || p.role === 'gm' ? p.role : 'hunter', pts: Math.floor(p.pts || 0), earned: Math.floor((p.st ? p.st.dist + p.st.catch + p.st.spot : 0)),
         dist: Math.round(p.dist || 0), walked: Math.round(p.trackLen || 0), caughtMin: p.caughtAt ? Math.round((p.caughtAt - g.runAt) / 60000) : null, caughtBy: p.caughtBy || '',
         st: Object.fromEntries(Object.entries(p.st || {}).map(([k, v]) => [k, Math.floor(v)])) } } : {}) })),
     started: g.startAt, ended: g.endedAt || 0 });
