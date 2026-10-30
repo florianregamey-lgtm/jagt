@@ -11,6 +11,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const { createLibrary } = require('./library');
+const LIB = createLibrary(); // Online-Speicher für Karten und Einstellungen (oder null)
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
@@ -587,6 +589,62 @@ function validPoly(a) {
 }
 const validPt = v => (Array.isArray(v) && Math.abs(num(v[0], 999)) <= 90 && Math.abs(num(v[1], 999)) <= 180 ? [r5(v[0]), r5(v[1])] : null);
 
+function cleanMap(i) {
+  i = i || {};
+  return {
+    zone: i.zone ? validPoly(i.zone) : null,
+    starts: (Array.isArray(i.starts) ? i.starts : i.start ? [i.start] : []).slice(0, 10).map(validPoly).filter(Boolean),
+    targets: (Array.isArray(i.targets) ? i.targets : []).slice(0, 60).map(validPt).filter(Boolean),
+    spots: (Array.isArray(i.spots) ? i.spots : []).slice(0, 50).map(validPt).filter(Boolean),
+    flags: { A: i.flags && validPt(i.flags.A), B: i.flags && validPt(i.flags.B) },
+  };
+}
+function applySettings(s, i) {
+  for (const k of Object.keys(LIMITS)) if (k in i) s[k] = clamp(num(i[k], s[k]), ...LIMITS[k]);
+  for (const k of ['showHunters', 'convert', 'zoneShrink', 'confirmTag']) if (typeof i[k] === 'boolean') s[k] = i[k];
+  return s;
+}
+
+// ---------- Bibliothek (Karten und Einstellungen online speichern) ----------
+async function sendLib(ws) {
+  if (!LIB) return send(ws, { t: 'lib', online: false });
+  try {
+    const [maps, sets] = await Promise.all([LIB.list('map'), LIB.list('set')]);
+    const names = a => a.map(x => x.name).filter(Boolean).sort((a, b) => a.localeCompare(b, 'de'));
+    send(ws, { t: 'lib', online: true, where: LIB.kind, maps: names(maps), sets: names(sets) });
+  } catch (e) { console.error(e.message); send(ws, { t: 'lib', online: false, error: 'Online-Speicher nicht erreichbar.' }); }
+}
+async function handleLib(ws, g, m) {
+  if (!ws.admin) return send(ws, { t: 'error', msg: 'Für die Bibliothek braucht es das Passwort.' });
+  if (m.t === 'libList') return sendLib(ws);
+  if (!LIB) return send(ws, { t: 'error', msg: 'Der Online-Speicher ist nicht eingerichtet.' });
+  const kind = m.kind === 'set' ? 'set' : 'map', name = clean(m.name, 40);
+  const what = kind === 'map' ? 'Karte' : 'Einstellungen';
+  if (!name) return send(ws, { t: 'error', msg: 'Gib zuerst einen Namen ein.' });
+  try {
+    if (m.t === 'libSave') {
+      // Daten vom Gerät (Hochladen alter Karten / Import) werden gleich geprüft wie beim Zeichnen
+      let data, mode = g.mode;
+      if (m.data) { data = kind === 'map' ? cleanMap(m.data) : applySettings({ ...DEFAULTS }, m.data); if (MODES.includes(m.mode)) mode = m.mode; }
+      else data = kind === 'map' ? g.map : { ...g.settings };
+      await LIB.set(kind, name, { mode, data });
+      send(ws, { t: 'ev', kind: 'ok', text: `${what} «${name}» online gespeichert.` });
+    } else if (m.t === 'libLoad') {
+      if (g.phase !== 'lobby') return send(ws, { t: 'error', msg: 'Laden geht nur vor dem Spiel.' });
+      const rec = await LIB.get(kind, name);
+      if (!rec) return send(ws, { t: 'error', msg: `${what} «${name}» nicht gefunden.` });
+      if (rec.mode && MODES.includes(rec.mode) && rec.mode !== g.mode) { g.mode = rec.mode; normalizeRoles(g); }
+      if (kind === 'map') g.map = cleanMap(rec.data); else applySettings(g.settings, rec.data || {});
+      dirty(g); pushNow(g);
+      send(ws, { t: 'libLoaded', kind, name });
+    } else if (m.t === 'libDelete') {
+      await LIB.del(kind, name);
+      send(ws, { t: 'ev', kind: 'ok', text: `${what} «${name}» gelöscht.` });
+    }
+  } catch (e) { console.error(e.message); return send(ws, { t: 'error', msg: 'Online-Speicher: ' + e.message }); }
+  sendLib(ws);
+}
+
 function updatePos(g, me, m) {
   const running = g.phase === 'running';
   const lat = num(m.lat, null), lng = num(m.lng, null);
@@ -667,8 +725,11 @@ function handle(ws, m) {
     ws.tries = (ws.tries || 0) + 1;
     if (ws.tries > 10) return send(ws, { t: 'unlocked', ok: false, msg: 'Zu viele Versuche. Lade die Seite neu.' });
     ws.admin = String(m.pw || '') === ADMIN_PW;
-    return send(ws, { t: 'unlocked', ok: ws.admin, msg: ws.admin ? '' : 'Falsches Passwort.' });
+    send(ws, { t: 'unlocked', ok: ws.admin, msg: ws.admin ? '' : 'Falsches Passwort.' });
+    if (ws.admin) sendLib(ws);
+    return;
   }
+  if (m.t.startsWith('lib')) { handleLib(ws, g, m); return; }
   // Einstellungen (Modus, Regeln, Karte): nur mit Passwort
   if (['mode', 'settings', 'setMap'].includes(m.t) && !ws.admin) return send(ws, { t: 'error', msg: 'Für die Einstellungen braucht es das Passwort.' });
   if (!host && !['mode', 'settings', 'setMap'].includes(m.t)) return send(ws, { t: 'error', msg: 'Nur die Spielleitung kann das ändern.' });
@@ -676,21 +737,12 @@ function handle(ws, m) {
     case 'mode': if (g.phase !== 'lobby' || !MODES.includes(m.mode)) return; g.mode = m.mode; normalizeRoles(g); break;
     case 'settings': {
       if (g.phase !== 'lobby') return;
-      const s = g.settings, i = m.settings || {};
-      for (const k of Object.keys(LIMITS)) if (k in i) s[k] = clamp(num(i[k], s[k]), ...LIMITS[k]);
-      for (const k of ['showHunters', 'convert', 'zoneShrink', 'confirmTag']) if (typeof i[k] === 'boolean') s[k] = i[k];
+      applySettings(g.settings, m.settings || {});
       break;
     }
     case 'setMap': {
       if (g.phase !== 'lobby') return send(ws, { t: 'error', msg: 'Die Karte kann nur vor dem Spiel geändert werden.' });
-      const i = m.map || {};
-      g.map = {
-        zone: i.zone ? validPoly(i.zone) : null,
-        starts: (Array.isArray(i.starts) ? i.starts : i.start ? [i.start] : []).slice(0, 10).map(validPoly).filter(Boolean),
-        targets: (Array.isArray(i.targets) ? i.targets : []).slice(0, 60).map(validPt).filter(Boolean),
-        spots: (Array.isArray(i.spots) ? i.spots : []).slice(0, 50).map(validPt).filter(Boolean),
-        flags: { A: i.flags && validPt(i.flags.A), B: i.flags && validPt(i.flags.B) },
-      };
+      g.map = cleanMap(m.map);
       break;
     }
     case 'role': {

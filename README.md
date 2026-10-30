@@ -38,11 +38,21 @@ Rot gegen Blau. Gegnerische Flagge holen und in die eigene Basis bringen. Abgesc
 ### Einstellungen mit Passwort
 Modus, Karte und Regeln liegen im Reiter **Einstellungen** und sind mit dem Passwort **9655** gesperrt. Ändern lässt es sich auf Render unter *Environment* mit der Variable `ADMIN_PASSWORD`.
 
-### Spieleinstellungen speichern
-Im Reiter Einstellungen lassen sich alle Regeln (Zeiten, Distanzen, Punkte, Schalter) zusammen mit dem Spielmodus unter einem Namen speichern und später mit einem Tipp laden – unabhängig von der Karte. Gespeichert wird auf dem Gerät der Spielleitung.
+### Karten und Spieleinstellungen speichern
+Im Reiter Einstellungen lassen sich Karten (Zonen, Auftragsorte, Power-up-Orte) und Spieleinstellungen (alle Regeln + Spielmodus) je unter einem Namen speichern und später laden.
 
-### Karte zeichnen und speichern
-Im Reiter Einstellungen zeichnet man Spielzone, Startzonen, Auftragsorte und Power-up-Orte frei auf der Karte (Eckpunkte antippen, dann «Fertig»). Fertige Karten lassen sich unter einem Namen speichern und später mit einem Tipp laden. Gespeichert wird auf dem Gerät der Spielleitung.
+- **Mit Online-Speicher (Firebase):** alles liegt online und ist auf jedem Gerät verfügbar – Browser, App, andere Leiter. Speichern, Laden und Löschen nur mit dem Passwort. Einrichtung siehe unten.
+- **Ohne Online-Speicher:** gespeichert wird nur auf dem jeweiligen Gerät (Browser und App haben getrennte Speicher). Sobald der Online-Speicher eingerichtet ist, erscheint ein Knopf «📤 … vom Gerät hochladen».
+- **Exportieren/Importieren:** Karte + Einstellungen als Datei (`.jagd.json`) – zum Weitergeben per WhatsApp oder als Sicherung.
+
+### Online-Speicher mit Firebase einrichten
+1. https://console.firebase.google.com → Projekt hinzufügen (oder ein bestehendes nehmen).
+2. **Firestore Database → Datenbank erstellen** → Standort `europe-west6 (Zürich)` → **Produktionsmodus**.
+3. Zahnrad → **Projekteinstellungen → Dienstkonten → Neuen privaten Schlüssel generieren** → eine JSON-Datei wird heruntergeladen. **Geheim halten, nicht auf GitHub hochladen!**
+4. Render → Service → **Environment → Add Environment Variable**: Key `FIREBASE_SERVICE_ACCOUNT`, Value = ganzer Inhalt der JSON-Datei. Speichern; Render startet neu.
+5. Prüfen: In den Einstellungen steht «☁ Online gespeichert».
+
+Auf dem Raspberry Pi geht es auch ohne Firebase: Umgebungsvariable `LIB_FILE=./data/bibliothek.json` setzen, dann speichert der Server in diese Datei.
 
 ## Android-App
 Im Ordner `app/` liegt eine Android-App (Capacitor). Sie lädt das Spiel direkt vom Server – Änderungen am Spiel sind also sofort auch in der App – und sendet die Position **auch bei gesperrtem Bildschirm** weiter (Mitteilung «Die Jagd läuft»). App- und Webseiten-Spieler spielen im selben Spiel.

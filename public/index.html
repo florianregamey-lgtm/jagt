@@ -279,6 +279,13 @@ button.chip{border-radius:999px}
         <button id="saveMap" class="ghost sm" style="flex:0 0 auto">Speichern</button>
         <button id="delMap" class="ghost sm" style="flex:0 0 auto" hidden>Löschen</button>
       </div>
+      <div class="row adminTools">
+        <span class="small muted" id="libInfo" style="flex:1 1 100%"></span>
+        <button id="uploadLocal" class="ghost sm" hidden></button>
+        <button id="exportBtn" class="ghost sm" style="flex:0 0 auto">⬇ Exportieren</button>
+        <button id="importBtn" class="ghost sm" style="flex:0 0 auto">⬆ Importieren</button>
+        <input type="file" id="importIn" accept=".json,application/json" hidden>
+      </div>
     </div>
   </div>
 
@@ -505,6 +512,8 @@ function connect(){
     else if (m.t === 'confirm') askConfirm(m);
     else if (m.t === 'tracks') onTracks(m);
     else if (m.t === 'confirmDone') { if (confirmReq && confirmReq.id === m.id) { confirmReq = null; $('confirmBox').hidden = true; } }
+    else if (m.t === 'lib') onLib(m);
+    else if (m.t === 'libLoaded') { if (m.kind === 'map') { $('mapName').value = m.name; flash($('loadMap'), 'Geladen', 'Laden'); } else { $('setName').value = m.name; flash($('loadSet'), 'Geladen', 'Laden'); } }
     else if (m.t === 'unlocked') {
       unlocked = m.ok;
       if (m.ok) { if ($('pw').value) store.set('jagd.pw', $('pw').value); $('pw').value = ''; $('pwErr').textContent = ''; }
@@ -762,29 +771,11 @@ function renderItems(){
   $('mapInfo').textContent = m.zone ? '' : 'Noch keine Spielzone (ohne Zone geht auch)';
 }
 // Gespeicherte Karten (auf diesem Gerät)
-// Gespeicherte Spieleinstellungen (Regeln + Modus, auf diesem Gerät)
+// ---------- Gespeicherte Karten und Spieleinstellungen ----------
+// Ist auf dem Server ein Online-Speicher eingerichtet (Firebase), liegt alles dort und ist auf jedem Gerät da.
+// Sonst wird nur auf diesem Gerät gespeichert (Browser und App haben getrennte Speicher).
+let lib = { online:false, maps:[], sets:[] };
 const savedSets = () => { try { return JSON.parse(store.get('jagd.sets') || '{}'); } catch { return {}; } };
-function renderSets(){
-  const s = savedSets(), sel = $('savedSets');
-  fillSelect(sel, Object.keys(s).sort(), 'Noch keine Einstellungen gespeichert', 'Gespeicherte Einstellungen …');
-  $('delSet').hidden = !s[$('setName').value.trim()];
-}
-$('saveSet').onclick = () => {
-  const n = $('setName').value.trim(); if (!n) return showErr('Gib den Einstellungen zuerst einen Namen.');
-  const s = savedSets(); s[n] = { settings:{ ...M.settings }, mode:M.mode, saved:Date.now() }; store.set('jagd.sets', JSON.stringify(s));
-  renderSets(); $('savedSets').value = n; $('saveSet').textContent = 'Gespeichert'; setTimeout(()=>$('saveSet').textContent='Speichern', 1500);
-};
-$('loadSet').onclick = () => {
-  const n = $('savedSets').value || $('setName').value.trim(), s = savedSets()[n];
-  if (!s) return showErr('Wähle zuerst gespeicherte Einstellungen aus.');
-  if (s.mode && s.mode !== M.mode) send({ t:'mode', mode:s.mode });
-  send({ t:'settings', settings:s.settings }); $('setName').value = n; renderSets();
-  const b = $('loadSet'); b.textContent = 'Geladen'; setTimeout(()=>b.textContent='Laden', 1500);
-};
-$('savedSets').onchange = () => { $('setName').value = $('savedSets').value; renderSets(); };
-$('setName').oninput = renderSets;
-$('delSet').onclick = () => { const s = savedSets(); delete s[$('setName').value.trim()]; store.set('jagd.sets', JSON.stringify(s)); $('setName').value = ''; renderSets(); };
-
 const savedMaps = () => { try { return JSON.parse(store.get('jagd.maps') || '{}'); } catch { return {}; } };
 function fillSelect(sel, names, empty, full){
   const key = names.join('\u0001');
@@ -793,26 +784,116 @@ function fillSelect(sel, names, empty, full){
   sel.replaceChildren(el('option',{value:''}, names.length ? full : empty), ...names.map(n => el('option',{value:n}, n)));
   if (names.includes(cur)) sel.value = cur;
 }
-function renderSaved(){
-  const s = savedMaps(), sel = $('savedMaps');
-  fillSelect(sel, Object.keys(s).sort(), 'Noch keine Karten gespeichert', 'Gespeicherte Karten …');
-  $('delMap').hidden = !s[$('mapName').value.trim()];
+const mapNames = () => lib.online ? lib.maps : Object.keys(savedMaps()).sort();
+const setNames = () => lib.online ? lib.sets : Object.keys(savedSets()).sort();
+function flash(btn, text, back){ btn.textContent = text; setTimeout(() => btn.textContent = back, 1500); }
+
+function renderLib(){
+  const on = lib.online;
+  $('libInfo').textContent = on ? '☁ Online gespeichert – auf allen Geräten verfügbar'
+    : (lib.error ? '⚠ ' + lib.error + ' Gespeichert wird nur auf diesem Gerät.' : '📱 Nur auf diesem Gerät gespeichert');
+  // Karten/Einstellungen, die noch nur auf diesem Gerät liegen, können hochgeladen werden
+  const upMaps = on ? Object.keys(savedMaps()).filter(n => !lib.maps.includes(n)) : [];
+  const upSets = on ? Object.keys(savedSets()).filter(n => !lib.sets.includes(n)) : [];
+  const n = upMaps.length + upSets.length;
+  $('uploadLocal').hidden = !n;
+  $('uploadLocal').textContent = `📤 ${n} vom Gerät hochladen`;
 }
+function renderSaved(){
+  fillSelect($('savedMaps'), mapNames(), 'Noch keine Karten gespeichert', 'Gespeicherte Karten …');
+  $('delMap').hidden = !mapNames().includes($('mapName').value.trim());
+  renderLib();
+}
+function renderSets(){
+  fillSelect($('savedSets'), setNames(), 'Noch keine Einstellungen gespeichert', 'Gespeicherte Einstellungen …');
+  $('delSet').hidden = !setNames().includes($('setName').value.trim());
+}
+function onLib(m){ lib = { online:!!m.online, maps:m.maps || [], sets:m.sets || [], error:m.error }; renderSaved(); renderSets(); }
+
+// Karten
 $('saveMap').onclick = () => {
   const n = $('mapName').value.trim(); if (!n) return showErr('Gib der Karte zuerst einen Namen.');
-  const s = savedMaps(); s[n] = { map:cloneMap(M.map), mode:M.mode }; store.set('jagd.maps', JSON.stringify(s));
-  renderSaved(); $('savedMaps').value = n; $('saveMap').textContent = 'Gespeichert'; setTimeout(()=>$('saveMap').textContent='Speichern', 1500);
+  if (lib.online) send({ t:'libSave', kind:'map', name:n });
+  else { const s = savedMaps(); s[n] = { map:cloneMap(M.map), mode:M.mode }; store.set('jagd.maps', JSON.stringify(s)); renderSaved(); }
+  $('savedMaps').value = n; flash($('saveMap'), 'Gespeichert', 'Speichern');
 };
 $('loadMap').onclick = () => {
-  const s = savedMaps()[$('savedMaps').value || $('mapName').value.trim()];
-  if (!s) return showErr('Wähle zuerst eine gespeicherte Karte aus.');
-  draft = cloneMap(s.map); pushMap(); $('mapName').value = $('savedMaps').value || $('mapName').value; didFit.lobby = false;
+  const n = $('savedMaps').value || $('mapName').value.trim();
+  if (!n || !mapNames().includes(n)) return showErr('Wähle zuerst eine gespeicherte Karte aus.');
+  $('mapName').value = n; didFit.lobby = false;
+  if (lib.online) return send({ t:'libLoad', kind:'map', name:n });
+  const s = savedMaps()[n];
+  draft = cloneMap(s.map); pushMap();
   if (s.mode && s.mode !== M.mode) send({ t:'mode', mode:s.mode });
-  renderSaved();
+  renderSaved(); flash($('loadMap'), 'Geladen', 'Laden');
 };
 $('savedMaps').onchange = () => { $('mapName').value = $('savedMaps').value; renderSaved(); };
 $('mapName').oninput = renderSaved;
-$('delMap').onclick = () => { const s = savedMaps(); delete s[$('mapName').value.trim()]; store.set('jagd.maps', JSON.stringify(s)); $('mapName').value=''; renderSaved(); };
+$('delMap').onclick = () => {
+  const n = $('mapName').value.trim(); if (!n) return;
+  if (lib.online) send({ t:'libDelete', kind:'map', name:n });
+  else { const s = savedMaps(); delete s[n]; store.set('jagd.maps', JSON.stringify(s)); }
+  $('mapName').value = ''; renderSaved();
+};
+
+// Spieleinstellungen
+$('saveSet').onclick = () => {
+  const n = $('setName').value.trim(); if (!n) return showErr('Gib den Einstellungen zuerst einen Namen.');
+  if (lib.online) send({ t:'libSave', kind:'set', name:n });
+  else { const s = savedSets(); s[n] = { settings:{ ...M.settings }, mode:M.mode, saved:Date.now() }; store.set('jagd.sets', JSON.stringify(s)); renderSets(); }
+  $('savedSets').value = n; flash($('saveSet'), 'Gespeichert', 'Speichern');
+};
+$('loadSet').onclick = () => {
+  const n = $('savedSets').value || $('setName').value.trim();
+  if (!n || !setNames().includes(n)) return showErr('Wähle zuerst gespeicherte Einstellungen aus.');
+  $('setName').value = n;
+  if (lib.online) return send({ t:'libLoad', kind:'set', name:n });
+  const s = savedSets()[n];
+  if (s.mode && s.mode !== M.mode) send({ t:'mode', mode:s.mode });
+  send({ t:'settings', settings:s.settings }); renderSets(); flash($('loadSet'), 'Geladen', 'Laden');
+};
+$('savedSets').onchange = () => { $('setName').value = $('savedSets').value; renderSets(); };
+$('setName').oninput = renderSets;
+$('delSet').onclick = () => {
+  const n = $('setName').value.trim(); if (!n) return;
+  if (lib.online) send({ t:'libDelete', kind:'set', name:n });
+  else { const s = savedSets(); delete s[n]; store.set('jagd.sets', JSON.stringify(s)); }
+  $('setName').value = ''; renderSets();
+};
+
+// Alte, nur auf diesem Gerät gespeicherte Karten/Einstellungen online hochladen
+$('uploadLocal').onclick = () => {
+  for (const [n, s] of Object.entries(savedMaps())) if (!lib.maps.includes(n)) send({ t:'libSave', kind:'map', name:n, data:cloneMap(s.map), mode:s.mode });
+  for (const [n, s] of Object.entries(savedSets())) if (!lib.sets.includes(n)) send({ t:'libSave', kind:'set', name:n, data:s.settings, mode:s.mode });
+  $('uploadLocal').hidden = true;
+};
+
+// Export / Import als Datei (Karte + Einstellungen zusammen) – zum Weitergeben oder als Sicherung
+$('exportBtn').onclick = async () => {
+  const name = $('mapName').value.trim() || 'Jagd';
+  const json = JSON.stringify({ typ:'die-jagd', version:1, name, mode:M.mode, map:M.map, settings:M.settings }, null, 1);
+  const file = name.replace(/[^\wäöüÄÖÜ -]+/g, '').trim().replace(/\s+/g, '-') + '.jagd.json';
+  const blob = new Blob([json], { type:'application/json' });
+  try {
+    const f = new File([blob], file, { type:'application/json' });
+    if (navigator.canShare && navigator.canShare({ files:[f] })) { await navigator.share({ files:[f], title:'Die Jagd – ' + name }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = el('a',{ href:URL.createObjectURL(blob), download:file }); document.body.append(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+};
+$('importBtn').onclick = () => $('importIn').click();
+$('importIn').onchange = async () => {
+  const f = $('importIn').files[0]; $('importIn').value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.typ !== 'die-jagd' || !d.map) throw new Error();
+    if (d.mode && d.mode !== M.mode) send({ t:'mode', mode:d.mode });
+    draft = cloneMap(d.map); pushMap(); didFit.lobby = false;
+    if (d.settings) send({ t:'settings', settings:d.settings });
+    $('mapName').value = d.name || ''; renderSaved();
+    showErr('Importiert: ' + (d.name || f.name) + '. Zum Behalten noch «Speichern» tippen.');
+  } catch { showErr('Diese Datei ist keine gültige Jagd-Datei.'); }
+};
 
 // ---------- Reiter & Passwort ----------
 function setTab(t){ lobbyTab = t; $('tabGame').setAttribute('aria-selected', t === 'game'); $('tabSet').setAttribute('aria-selected', t === 'settings'); render(); if (lobbyMap) setTimeout(()=>lobbyMap.invalidateSize(), 0); }
